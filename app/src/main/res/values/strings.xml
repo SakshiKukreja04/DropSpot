@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">DropSpot</string>
+    <string name="create_account">Create Account</string>
+    <string name="join_community">Join the DropSpot community</string>
+    <string name="full_name">Full Name</string>
+    <string name="email">Email</string>
+    <string name="password">Password</string>
+    <string name="confirm_password">Confirm Password</string>
+    <string name="register">Register</string>
+    <string name="already_have_account">Already have an account? Login</string>
+</resources>

@@ -12,7 +12,7 @@
         android:layout_height="?attr/actionBarSize"
         android:background="?attr/colorPrimary"
         app:navigationIcon="@android:drawable/ic_menu_close_clear_cancel"
-        app:title="Item Details"
+        app:title="@string/item_details"
         app:titleTextColor="@android:color/black"
         app:layout_constraintTop_toTopOf="parent" />
 
@@ -22,6 +22,7 @@
         android:layout_height="240dp"
         android:scaleType="centerCrop"
         android:src="@drawable/ic_launcher_background"
+        android:contentDescription="@string/item_image_content_description"
         app:layout_constraintTop_toBottomOf="@id/toolbar" />
 
     <TextView
@@ -31,7 +32,7 @@
         android:layout_marginStart="16dp"
         android:layout_marginTop="16dp"
         android:layout_marginEnd="16dp"
-        android:text="Item Title"
+        android:text="@string/item_title_placeholder"
         android:textColor="@android:color/black"
         android:textSize="22sp"
         android:textStyle="bold"
@@ -43,7 +44,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:text="Category"
+        android:text="@string/category_placeholder"
         android:textColor="@android:color/black"
         android:textSize="16sp"
         app:layout_constraintStart_toStartOf="@id/tv_item_title_detail"
@@ -54,7 +55,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginEnd="16dp"
-        android:text="1.2 km"
+        android:text="@string/distance_placeholder"
         android:textColor="@android:color/black"
         android:textSize="16sp"
         app:layout_constraintEnd_toEndOf="parent"
@@ -67,7 +68,7 @@
         android:layout_marginTop="16dp"
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
-        android:text="This is a detailed description of the item, providing more information about its condition and features."
+        android:text="@string/item_description_placeholder"
         android:textColor="@android:color/black"
         android:textSize="16sp"
         app:layout_constraintStart_toStartOf="parent"
@@ -76,6 +77,7 @@
 
     <LinearLayout
         android:id="@+id/owner_actions_layout"
+        style="?android:attr/buttonBarStyle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
@@ -85,19 +87,21 @@
 
         <Button
             android:id="@+id/btn_accept"
+            style="?android:attr/buttonBarButtonStyle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginEnd="8dp"
-            android:text="Accept" />
+            android:text="@string/accept" />
 
         <Button
             android:id="@+id/btn_reject"
+            style="?android:attr/buttonBarButtonStyle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
-            android:text="Reject" />
+            android:text="@string/reject" />
     </LinearLayout>
 
     <TextView
@@ -105,7 +109,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
-        android:text="Contact: 123-456-7890"
+        android:text="@string/contact_details_placeholder"
         android:visibility="gone"
         android:textColor="@android:color/black"
         android:textSize="16sp"
@@ -116,7 +120,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
-        android:text="Request Item"
+        android:text="@string/request_item"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

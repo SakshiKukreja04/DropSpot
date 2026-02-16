@@ -8,4 +8,16 @@
     <string name="confirm_password">Confirm Password</string>
     <string name="register">Register</string>
     <string name="already_have_account">Already have an account? Login</string>
+
+    <!-- Item Detail Strings -->
+    <string name="item_details">Item Details</string>
+    <string name="item_title_placeholder">Item Title</string>
+    <string name="category_placeholder">Category</string>
+    <string name="distance_placeholder">1.2 km</string>
+    <string name="item_description_placeholder">This is a detailed description of the item, providing more information about its condition and features.</string>
+    <string name="accept">Accept</string>
+    <string name="reject">Reject</string>
+    <string name="contact_details_placeholder">Contact: 123-456-7890</string>
+    <string name="request_item">Request Item</string>
+    <string name="item_image_content_description">Item Image</string>
 </resources>

@@ -1,91 +1,73 @@
 package com.example.dropspot;
 
-import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.view.View;
+import android.util.Log;
+import android.view.GestureDetector;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.widget.Button;
 import android.widget.ImageView;
-import android.widget.TextView;
 import android.widget.Toast;
-
 import androidx.appcompat.app.AppCompatActivity;
+import com.google.android.material.snackbar.Snackbar;
 
 public class ItemDetailActivity extends AppCompatActivity {
-
-    private SharedPreferences prefs;
-    private RequestState currentRequestState;
+    private static final String TAG = "ItemDetailActivity";
+    private GestureDetector gestureDetector;
+    private ScaleGestureDetector scaleGestureDetector;
+    private float scaleFactor = 1.0f;
+    private ImageView ivItemImage;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_item_detail);
 
-        ImageView itemImage = findViewById(R.id.iv_item_image_detail);
-        TextView itemTitle = findViewById(R.id.tv_item_title_detail);
-        TextView itemCategory = findViewById(R.id.tv_category_detail);
-        TextView itemDistance = findViewById(R.id.tv_distance_detail);
-        Button requestButton = findViewById(R.id.btn_request_item);
-        TextView contactDetails = findViewById(R.id.tv_contact_details);
+        Button btnRequestItem = findViewById(R.id.btn_request_item);
+        ivItemImage = findViewById(R.id.iv_item_image_detail);
 
-        // Initialize SharedPreferences
-        prefs = getSharedPreferences("RequestPrefs", MODE_PRIVATE);
-
-        Intent intent = getIntent();
-        String itemTitleText = "";
-        if (intent != null) {
-            itemTitleText = intent.getStringExtra("ITEM_TITLE");
-            itemTitle.setText(itemTitleText);
-            itemCategory.setText(intent.getStringExtra("ITEM_CATEGORY"));
-            itemDistance.setText(intent.getStringExtra("ITEM_DISTANCE"));
-            itemImage.setImageResource(intent.getIntExtra("ITEM_IMAGE", R.drawable.ic_launcher_background));
+        if (btnRequestItem != null) {
+            btnRequestItem.setOnClickListener(v -> {
+                // Feature 1: Button Click Event (Snackbar)
+                Snackbar.make(v, "Request Sent", Snackbar.LENGTH_LONG).show();
+                Log.d(TAG, "Request Item button clicked");
+            });
         }
 
-        // Load the request state from SharedPreferences
-        String requestStateString = prefs.getString(itemTitleText, RequestState.NOT_REQUESTED.name());
-        currentRequestState = RequestState.valueOf(requestStateString);
-
-        updateUIBasedOnState(requestButton, contactDetails);
-
-        final String finalItemTitleText = itemTitleText;
-        requestButton.setOnClickListener(v -> {
-            if (currentRequestState == RequestState.NOT_REQUESTED) {
-                currentRequestState = RequestState.REQUESTED;
-                saveRequestState(finalItemTitleText, currentRequestState);
-                updateUIBasedOnState(requestButton, contactDetails);
-                Toast.makeText(this, "Request Sent", Toast.LENGTH_SHORT).show();
+        // Feature 3: Double Tap Gesture using GestureDetector
+        gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onDoubleTap(MotionEvent e) {
+                Toast.makeText(ItemDetailActivity.this, "Item Saved", Toast.LENGTH_SHORT).show();
+                return true;
             }
         });
-    }
 
-    private void updateUIBasedOnState(Button requestButton, TextView contactDetails) {
-        switch (currentRequestState) {
-            case NOT_REQUESTED:
-                requestButton.setText("Request Item");
-                requestButton.setEnabled(true);
-                contactDetails.setVisibility(View.GONE);
-                break;
-            case REQUESTED:
-                requestButton.setText("Request Sent");
-                requestButton.setEnabled(false);
-                contactDetails.setVisibility(View.GONE);
-                break;
-            case ACCEPTED:
-                requestButton.setText("Request Accepted");
-                requestButton.setEnabled(false);
-                contactDetails.setVisibility(View.VISIBLE);
-                break;
-            case REJECTED:
-                requestButton.setText("Request Rejected");
-                requestButton.setEnabled(false);
-                contactDetails.setVisibility(View.GONE);
-                break;
+        // Feature: Pinch-to-Zoom Gesture using ScaleGestureDetector
+        scaleGestureDetector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override
+            public boolean onScale(ScaleGestureDetector detector) {
+                scaleFactor *= detector.getScaleFactor();
+                // Prevent over-zooming
+                scaleFactor = Math.max(0.1f, Math.min(scaleFactor, 10.0f));
+                ivItemImage.setScaleX(scaleFactor);
+                ivItemImage.setScaleY(scaleFactor);
+                return true;
+            }
+        });
+
+        if (ivItemImage != null) {
+            ivItemImage.setOnTouchListener((v, event) -> {
+                gestureDetector.onTouchEvent(event);
+                scaleGestureDetector.onTouchEvent(event);
+                return true;
+            });
         }
     }
 
-    private void saveRequestState(String itemTitle, RequestState state) {
-        SharedPreferences.Editor editor = prefs.edit();
-        editor.putString(itemTitle, state.name());
-        editor.apply();
+    @Override
+    public boolean onSupportNavigateUp() {
+        finish();
+        return true;
     }
 }

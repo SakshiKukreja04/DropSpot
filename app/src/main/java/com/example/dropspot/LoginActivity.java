@@ -15,14 +15,18 @@ public class LoginActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
-        // Note: The XML IDs are btnLogin and tvRegister based on the layout file
         Button loginButton = findViewById(R.id.btnLogin);
         TextView registerLink = findViewById(R.id.tvRegister);
 
         if (loginButton != null) {
             loginButton.setOnClickListener(v -> {
-                Log.d(TAG, "Login button clicked, navigating to HomeActivity");
-                startActivity(new Intent(LoginActivity.this, HomeActivity.class));
+                // Create an Intent to navigate to HomeActivity
+                Intent intent = new Intent(LoginActivity.this, HomeActivity.class);
+
+                // Start the HomeActivity
+                startActivity(intent);
+
+                // Finish the LoginActivity to remove it from the back stack
                 finish();
             });
         }

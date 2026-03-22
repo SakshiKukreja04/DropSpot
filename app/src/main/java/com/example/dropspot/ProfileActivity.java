@@ -1,53 +1,95 @@
 package com.example.dropspot;
 
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
-import android.util.Log;
 import android.widget.Button;
+import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import com.bumptech.glide.Glide;
+import com.google.android.gms.auth.api.signin.GoogleSignIn;
+import com.google.android.gms.auth.api.signin.GoogleSignInClient;
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
+import com.google.firebase.auth.FirebaseAuth;
 
 public class ProfileActivity extends AppCompatActivity {
-    private static final String TAG = "ProfileActivity";
+
+    private SessionManager sessionManager;
+    private ImageView ivProfileImage;
+    private ActivityResultLauncher<String> imagePickerLauncher;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_profile);
 
-        Button btnEditProfile = findViewById(R.id.btnEditProfile);
-        Button btnViewMyPosts = findViewById(R.id.btnViewMyPosts);
+        sessionManager = new SessionManager(this);
+
+        ivProfileImage = findViewById(R.id.ivProfileImage);
+        TextView tvProfileName = findViewById(R.id.tvProfileName);
+        TextView tvProfileEmail = findViewById(R.id.tvProfileEmail);
         Button btnLogout = findViewById(R.id.btnLogout);
 
-        if (btnEditProfile != null) {
-            btnEditProfile.setOnClickListener(v -> {
-                // Feature 1: Button Click Event
-                Toast.makeText(ProfileActivity.this, "Edit Profile Clicked", Toast.LENGTH_SHORT).show();
-            });
+        // Load user data
+        tvProfileName.setText(sessionManager.getUserName());
+        tvProfileEmail.setText(sessionManager.getUserEmail());
+
+        String photoUrl = sessionManager.getUserPhotoUrl();
+        if (photoUrl != null && !photoUrl.isEmpty()) {
+            Glide.with(this).load(photoUrl).circleCrop().into(ivProfileImage);
+        } else {
+            // Use a default placeholder if no image is available
+            Glide.with(this).load(R.drawable.ic_launcher_background).circleCrop().into(ivProfileImage);
         }
 
-        if (btnViewMyPosts != null) {
-            btnViewMyPosts.setOnClickListener(v -> {
-                startActivity(new Intent(ProfileActivity.this, PostedItemsActivity.class));
-            });
-        }
+        // Initialize Image Picker
+        imagePickerLauncher = registerForActivityResult(new ActivityResultContracts.GetContent(),
+                uri -> {
+                    if (uri != null) {
+                        ivProfileImage.setImageURI(uri);
+                        // In a real app, you would upload this URI to Firebase Storage
+                        // and update the user's profile URL in Firebase Auth and SessionManager.
+                        Toast.makeText(this, "Profile image updated (locally)", Toast.LENGTH_SHORT).show();
+                    }
+                });
 
-        if (btnLogout != null) {
-            btnLogout.setOnClickListener(v -> {
-                // Feature 1: Button Click Event
-                Toast.makeText(ProfileActivity.this, "Logged Out", Toast.LENGTH_SHORT).show();
-                Log.d(TAG, "Logout clicked, redirecting to LoginActivity");
-                Intent intent = new Intent(ProfileActivity.this, LoginActivity.class);
-                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                startActivity(intent);
-                finish();
-            });
-        }
+        ivProfileImage.setOnClickListener(v -> {
+            // Allow user to pick a new profile image
+            imagePickerLauncher.launch("image/*");
+        });
+
+        btnLogout.setOnClickListener(v -> showLogoutDialog());
     }
 
-    @Override
-    public boolean onSupportNavigateUp() {
-        finish();
-        return true;
+    private void showLogoutDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Logout")
+                .setMessage("Are you sure you want to logout?")
+                .setPositiveButton("Logout", (dialog, which) -> logout())
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void logout() {
+        FirebaseAuth.getInstance().signOut();
+
+        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken(getString(R.string.default_web_client_id))
+                .requestEmail()
+                .build();
+        GoogleSignInClient googleSignInClient = GoogleSignIn.getClient(this, gso);
+        googleSignInClient.signOut().addOnCompleteListener(task -> {
+            sessionManager.logout();
+            Intent intent = new Intent(ProfileActivity.this, LoginActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(intent);
+            finish();
+            Toast.makeText(ProfileActivity.this, "Logged out successfully", Toast.LENGTH_SHORT).show();
+        });
     }
 }

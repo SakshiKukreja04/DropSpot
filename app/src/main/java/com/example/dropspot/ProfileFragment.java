@@ -46,14 +46,18 @@ public class ProfileFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.activity_profile, container, false);
 
-        TextView tvFullName = view.findViewById(R.id.tvFullName);
-        TextView tvEmail = view.findViewById(R.id.tvEmail);
+        TextView tvFullName = view.findViewById(R.id.tvProfileName);
+        TextView tvEmail = view.findViewById(R.id.tvProfileEmail);
         Button btnLogout = view.findViewById(R.id.btnLogout);
         Button btnEditProfile = view.findViewById(R.id.btnEditProfile);
         Button btnViewMyPosts = view.findViewById(R.id.btnViewMyPosts);
 
-        tvFullName.setText(fullName);
-        tvEmail.setText(email);
+        if (tvFullName != null) {
+            tvFullName.setText(fullName);
+        }
+        if (tvEmail != null) {
+            tvEmail.setText(email);
+        }
 
         if (btnLogout != null) {
             btnLogout.setOnClickListener(v -> {

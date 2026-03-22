@@ -99,6 +99,7 @@ public class HomeActivity extends AppCompatActivity implements FeedAdapter.OnIte
                     startActivity(new Intent(HomeActivity.this, AnnouncementsActivity.class));
                     return true;
                 } else if (itemId == R.id.nav_profile) {
+                    // Navigate to ProfileActivity instead of showing logout dialog
                     startActivity(new Intent(HomeActivity.this, ProfileActivity.class));
                     return true;
                 }

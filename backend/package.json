@@ -1,0 +1,30 @@
+{
+  "name": "dropspot-backend",
+  "version": "1.0.0",
+  "description": "Firebase REST API backend for DropSpot Android application",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "deploy": "firebase deploy"
+  },
+  "keywords": [
+    "firebase",
+    "firestore",
+    "express",
+    "rest-api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "firebase-admin": "^12.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

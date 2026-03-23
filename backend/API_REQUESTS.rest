@@ -1,0 +1,281 @@
+# DropSpot Backend API - Sample Requests
+# Use with REST clients like Postman, Insomnia, or VS Code REST Client
+
+# Base URL
+@baseUrl = http://localhost:5000
+@token = your_firebase_id_token_here
+
+### ============================================
+### Health Check
+### ============================================
+
+### Health Check
+GET {{baseUrl}}/health
+
+---
+
+### ============================================
+### POSTS ENDPOINTS
+### ============================================
+
+### Create Post
+POST {{baseUrl}}/api/posts
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "iPhone 12 Pro",
+  "description": "Excellent condition, barely used, comes with original box",
+  "category": "Electronics",
+  "condition": "excellent",
+  "latitude": 40.7128,
+  "longitude": -74.0060,
+  "images": ["https://example.com/image1.jpg"]
+}
+
+### Get All Posts
+GET {{baseUrl}}/api/posts?category=Electronics&limit=20&offset=0
+Authorization: Bearer {{token}}
+
+### Get All Posts with Distance Filtering
+GET {{baseUrl}}/api/posts?latitude=40.7128&longitude=-74.0060&maxDistance=5&limit=10
+Authorization: Bearer {{token}}
+
+### Get Post Details
+GET {{baseUrl}}/api/posts/post-id-here
+Authorization: Bearer {{token}}
+
+### Update Post
+PUT {{baseUrl}}/api/posts/post-id-here
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "iPhone 12 Pro Updated",
+  "description": "New description",
+  "condition": "good"
+}
+
+### Delete Post
+DELETE {{baseUrl}}/api/posts/post-id-here
+Authorization: Bearer {{token}}
+
+### Increment View Count
+PUT {{baseUrl}}/api/posts/post-id-here/view
+Authorization: Bearer {{token}}
+
+---
+
+### ============================================
+### REQUESTS ENDPOINTS
+### ============================================
+
+### Create Request
+POST {{baseUrl}}/api/requests
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "postId": "post-id-here",
+  "message": "Hi, I'm interested in this iPhone. When can I see it?"
+}
+
+### Get Received Requests
+GET {{baseUrl}}/api/requests?type=received
+Authorization: Bearer {{token}}
+
+### Get Sent Requests
+GET {{baseUrl}}/api/requests?type=sent
+Authorization: Bearer {{token}}
+
+### Get Request Details
+GET {{baseUrl}}/api/requests/request-id-here
+Authorization: Bearer {{token}}
+
+### Accept Request
+PUT {{baseUrl}}/api/requests/request-id-here
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "status": "accepted"
+}
+
+### Reject Request
+PUT {{baseUrl}}/api/requests/request-id-here
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "status": "rejected"
+}
+
+### Cancel Request
+DELETE {{baseUrl}}/api/requests/request-id-here
+Authorization: Bearer {{token}}
+
+---
+
+### ============================================
+### SAVED POSTS ENDPOINTS
+### ============================================
+
+### Save Post
+POST {{baseUrl}}/api/saved
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "postId": "post-id-here"
+}
+
+### Get Saved Posts
+GET {{baseUrl}}/api/saved/user-id-here?limit=20&offset=0
+Authorization: Bearer {{token}}
+
+### Check if Post is Saved
+GET {{baseUrl}}/api/saved/check/post-id-here
+Authorization: Bearer {{token}}
+
+### Remove Saved Post
+DELETE {{baseUrl}}/api/saved/post-id-here
+Authorization: Bearer {{token}}
+
+---
+
+### ============================================
+### EVENTS ENDPOINTS
+### ============================================
+
+### Create Event
+POST {{baseUrl}}/api/events
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "Community Park Cleanup",
+  "description": "Join us for a community cleanup at Central Park",
+  "category": "Community",
+  "startDate": "2024-04-20T10:00:00Z",
+  "endDate": "2024-04-20T12:00:00Z",
+  "location": "Central Park, New York",
+  "latitude": 40.7829,
+  "longitude": -73.9654,
+  "images": []
+}
+
+### Get All Events
+GET {{baseUrl}}/api/events?category=Community&upcomingOnly=true&limit=20
+Authorization: Bearer {{token}}
+
+### Get Event Details
+GET {{baseUrl}}/api/events/event-id-here
+Authorization: Bearer {{token}}
+
+### Update Event
+PUT {{baseUrl}}/api/events/event-id-here
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "Updated Event Title",
+  "description": "Updated description"
+}
+
+### Delete Event
+DELETE {{baseUrl}}/api/events/event-id-here
+Authorization: Bearer {{token}}
+
+### Join Event
+POST {{baseUrl}}/api/events/event-id-here/join
+Authorization: Bearer {{token}}
+
+### Leave Event
+DELETE {{baseUrl}}/api/events/event-id-here/leave
+Authorization: Bearer {{token}}
+
+---
+
+### ============================================
+### NOTIFICATIONS ENDPOINTS
+### ============================================
+
+### Get Notifications
+GET {{baseUrl}}/api/notifications/user-id-here?limit=20&offset=0
+Authorization: Bearer {{token}}
+
+### Get Unread Notifications
+GET {{baseUrl}}/api/notifications/user-id-here?unreadOnly=true
+Authorization: Bearer {{token}}
+
+### Mark Notification as Read
+PUT {{baseUrl}}/api/notifications/notification-id-here
+Authorization: Bearer {{token}}
+
+### Mark Multiple as Read
+PUT {{baseUrl}}/api/notifications/batch/read
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "notificationIds": ["id1", "id2", "id3"]
+}
+
+### Delete Notification
+DELETE {{baseUrl}}/api/notifications/notification-id-here
+Authorization: Bearer {{token}}
+
+### Delete Multiple Notifications
+DELETE {{baseUrl}}/api/notifications/batch/delete
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "notificationIds": ["id1", "id2", "id3"]
+}
+
+### Get Unread Count
+GET {{baseUrl}}/api/notifications/user-id-here/unread-count
+Authorization: Bearer {{token}}
+
+---
+
+### ============================================
+### USERS ENDPOINTS
+### ============================================
+
+### Create/Update User Profile
+POST {{baseUrl}}/api/users
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "John Doe",
+  "phone": "+1-555-0123",
+  "bio": "Community member interested in local sharing",
+  "location": "New York, NY",
+  "latitude": 40.7128,
+  "longitude": -74.0060
+}
+
+### Get User Profile
+GET {{baseUrl}}/api/users/user-id-here
+Authorization: Bearer {{token}}
+
+### Get User Posts
+GET {{baseUrl}}/api/users/user-id-here/posts?limit=10&offset=0
+Authorization: Bearer {{token}}
+
+### Get User Statistics
+GET {{baseUrl}}/api/users/user-id-here/stats
+Authorization: Bearer {{token}}
+
+### Rate User
+PUT {{baseUrl}}/api/users/user-id-here/rating
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "rating": 5,
+  "comment": "Great experience! Very friendly and reliable."
+}

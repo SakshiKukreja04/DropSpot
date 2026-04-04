@@ -17,7 +17,17 @@ export const verifyToken = async (req, res, next) => {
       });
     }
 
-    const token = authHeader.split('Bearer ')[1];
+    // Extract token more robustly handling multiple spaces and trimming
+    const token = authHeader.replace(/^Bearer\s+/, '').trim();
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Malformed authorization header: Token missing',
+        error: 'INVALID_TOKEN_FORMAT',
+        code: 401,
+      });
+    }
 
     // Verify the token with Firebase
     const decodedToken = await auth.verifyIdToken(token);
@@ -31,11 +41,24 @@ export const verifyToken = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Token verification error:', error.message);
+
+    let message = 'Invalid or expired token';
+    let errorType = 'INVALID_TOKEN';
+
+    if (error.code === 'auth/id-token-expired') {
+      message = 'Firebase ID token has expired';
+      errorType = 'TOKEN_EXPIRED';
+    } else if (error.code === 'auth/argument-error') {
+      message = 'Invalid token format or project mismatch';
+      errorType = 'ARGUMENT_ERROR';
+    }
+
     return res.status(401).json({
       success: false,
-      message: 'Invalid or expired token',
-      error: 'INVALID_TOKEN',
+      message: message,
+      error: errorType,
       code: 401,
+      details: error.message
     });
   }
 };

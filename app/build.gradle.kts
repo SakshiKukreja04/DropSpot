@@ -42,10 +42,18 @@ dependencies {
     // Firebase dependencies
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
+    implementation(libs.firebase.storage)
     implementation(libs.play.services.auth)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     // Glide for image loading
     implementation(libs.glide)
+
+    // Retrofit and OkHttp
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.gson)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)

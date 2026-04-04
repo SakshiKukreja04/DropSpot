@@ -1,9 +1,8 @@
 import express from 'express';
-import { db } from '../config/firebase.js';
+import { db, FieldValue } from '../config/firebase.js';
 import {
   generateId,
   getCurrentTimestamp,
-  validatePostData,
   successResponse,
   errorResponse,
   calculateDistance,
@@ -16,246 +15,106 @@ const router = express.Router();
  */
 router.post('/', async (req, res, next) => {
   try {
-    const { title, description, category, latitude, longitude, images, condition } = req.body;
+    const { title, description, category, condition, images, latitude, longitude } = req.body;
     const userId = req.user.uid;
 
-    // Validate input
-    const validation = validatePostData(req.body);
-    if (!validation.isValid) {
-      return res.status(400).json(errorResponse('Validation failed', 'VALIDATION_ERROR', 400, validation.errors));
+    // Strict validation
+    if (!title || !description || !category || !condition) {
+      return res.status(400).json(errorResponse('Missing required fields', 'VALIDATION_ERROR', 400));
     }
 
-    // Create post object
+    // Ensure coordinates are present
+    if (latitude === undefined || longitude === undefined) {
+      return res.status(400).json(errorResponse('Location required', 'VALIDATION_ERROR', 400));
+    }
+
     const postId = generateId();
+    const timestamp = getCurrentTimestamp();
+
     const post = {
       id: postId,
-      userId,
+      userId: userId,
       title,
       description,
       category,
-      condition: condition || 'good',
-      latitude: latitude || null,
-      longitude: longitude || null,
-      images: images || [],
-      postedAt: getCurrentTimestamp(),
-      updatedAt: getCurrentTimestamp(),
+      condition,
+      images: Array.isArray(images) ? images : [],
+      latitude: Number(latitude),
+      longitude: Number(longitude),
       requestCount: 0,
       viewCount: 0,
       isActive: true,
+      createdAt: timestamp,
+      updatedAt: timestamp
     };
 
-    // Save to Firestore
     await db.collection('posts').doc(postId).set(post);
 
-    // Also add to user's posts subcollection
-    await db.collection('users').doc(userId).collection('posts').doc(postId).set({
-      postId,
-      createdAt: getCurrentTimestamp(),
-    });
+    // Increment user's post count
+    await db.collection('users').doc(userId).update({
+      postsCount: FieldValue.increment(1),
+      updatedAt: timestamp
+    }).catch(() => {});
 
     res.status(201).json(successResponse(post, 'Post created successfully'));
   } catch (error) {
-    console.error('Error creating post:', error);
     next(error);
   }
 });
 
 /**
- * GET /posts - Get all posts with optional filters
+ * GET /posts - Get posts with distance filtering
  */
 router.get('/', async (req, res, next) => {
   try {
-    const { category, userId, limit = 20, offset = 0, latitude, longitude, maxDistance = 50 } = req.query;
+    const { category, limit = 50, offset = 0, latitude, longitude, maxDistance = 2.5, myPostsOnly } = req.query;
+    const currentUserId = req.user.uid;
 
-    let query = db.collection('posts').where('isActive', '==', true);
+    let query = db.collection('posts');
 
-    // Filter by category if provided
-    if (category) {
+    if (myPostsOnly === 'true') {
+      query = query.where('userId', '==', currentUserId);
+    } else {
+      query = query.where('isActive', '==', true);
+    }
+
+    if (category && category !== 'All') {
       query = query.where('category', '==', category);
     }
 
-    // Filter by userId if provided
-    if (userId) {
-      query = query.where('userId', '==', userId);
-    }
-
-    // Get documents
-    const snapshot = await query.orderBy('postedAt', 'desc').limit(parseInt(limit) + parseInt(offset)).get();
-
+    const snapshot = await query.get();
     let posts = [];
-    snapshot.forEach((doc) => {
-      posts.push(doc.data());
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      // Exclude current user's posts from home feed
+      if (myPostsOnly !== 'true' && data.userId === currentUserId) return;
+      posts.push(data);
     });
 
-    // Apply offset
-    posts = posts.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
-
-    // Calculate distance if user coordinates provided
+    // Distance filtering
     if (latitude && longitude) {
       const userLat = parseFloat(latitude);
       const userLon = parseFloat(longitude);
-      const maxDist = parseInt(maxDistance);
+      const maxDist = parseFloat(maxDistance);
 
       posts = posts
-        .map((post) => {
-          if (post.latitude && post.longitude) {
-            const distance = calculateDistance(userLat, userLon, post.latitude, post.longitude);
-            return { ...post, distance };
-          }
-          return { ...post, distance: null };
+        .map(post => {
+          const distance = calculateDistance(userLat, userLon, post.latitude, post.longitude);
+          return { ...post, distance };
         })
-        .filter((post) => !post.distance || post.distance <= maxDist)
-        .sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+        .filter(post => post.distance <= maxDist)
+        .sort((a, b) => a.distance - b.distance);
+    } else {
+      // Sort by newest if no location
+      posts.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     }
 
-    res.status(200).json(successResponse({ posts, count: posts.length }, 'Posts retrieved successfully'));
+    // Pagination
+    const paginatedPosts = posts.slice(Number(offset), Number(offset) + Number(limit));
+
+    res.status(200).json(successResponse({ posts: paginatedPosts, count: posts.length }, 'Posts retrieved successfully'));
   } catch (error) {
-    console.error('Error getting posts:', error);
-    next(error);
-  }
-});
-
-/**
- * GET /posts/:id - Get post details
- */
-router.get('/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-
-    const doc = await db.collection('posts').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Post not found', 'NOT_FOUND', 404));
-    }
-
-    const post = doc.data();
-
-    // Increment view count
-    await db.collection('posts').doc(id).update({
-      viewCount: (post.viewCount || 0) + 1,
-      updatedAt: getCurrentTimestamp(),
-    });
-
-    // Get post owner info
-    const userDoc = await db.collection('users').doc(post.userId).get();
-    const userData = userDoc.exists ? userDoc.data() : null;
-
-    res.status(200).json(
-      successResponse(
-        {
-          ...post,
-          owner: userData ? { uid: post.userId, name: userData.name, email: userData.email, photo: userData.photo } : null,
-        },
-        'Post retrieved successfully'
-      )
-    );
-  } catch (error) {
-    console.error('Error getting post:', error);
-    next(error);
-  }
-});
-
-/**
- * PUT /posts/:id - Update post
- */
-router.put('/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.uid;
-    const { title, description, category, condition, images } = req.body;
-
-    const doc = await db.collection('posts').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Post not found', 'NOT_FOUND', 404));
-    }
-
-    const post = doc.data();
-
-    // Check ownership
-    if (post.userId !== userId) {
-      return res.status(403).json(errorResponse('Unauthorized to update this post', 'FORBIDDEN', 403));
-    }
-
-    // Update fields
-    const updateData = {};
-    if (title !== undefined) updateData.title = title;
-    if (description !== undefined) updateData.description = description;
-    if (category !== undefined) updateData.category = category;
-    if (condition !== undefined) updateData.condition = condition;
-    if (images !== undefined) updateData.images = images;
-    updateData.updatedAt = getCurrentTimestamp();
-
-    await db.collection('posts').doc(id).update(updateData);
-
-    const updatedPost = { ...post, ...updateData };
-
-    res.status(200).json(successResponse(updatedPost, 'Post updated successfully'));
-  } catch (error) {
-    console.error('Error updating post:', error);
-    next(error);
-  }
-});
-
-/**
- * DELETE /posts/:id - Delete post
- */
-router.delete('/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.uid;
-
-    const doc = await db.collection('posts').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Post not found', 'NOT_FOUND', 404));
-    }
-
-    const post = doc.data();
-
-    // Check ownership
-    if (post.userId !== userId) {
-      return res.status(403).json(errorResponse('Unauthorized to delete this post', 'FORBIDDEN', 403));
-    }
-
-    // Soft delete (mark as inactive)
-    await db.collection('posts').doc(id).update({
-      isActive: false,
-      updatedAt: getCurrentTimestamp(),
-    });
-
-    // Delete from user's posts subcollection
-    await db.collection('users').doc(userId).collection('posts').doc(id).delete();
-
-    res.status(200).json(successResponse(null, 'Post deleted successfully'));
-  } catch (error) {
-    console.error('Error deleting post:', error);
-    next(error);
-  }
-});
-
-/**
- * PUT /posts/:id/view - Increment view count
- */
-router.put('/:id/view', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-
-    const doc = await db.collection('posts').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Post not found', 'NOT_FOUND', 404));
-    }
-
-    const post = doc.data();
-
-    await db.collection('posts').doc(id).update({
-      viewCount: (post.viewCount || 0) + 1,
-    });
-
-    res.status(200).json(successResponse(null, 'View count incremented'));
-  } catch (error) {
-    console.error('Error updating view count:', error);
     next(error);
   }
 });

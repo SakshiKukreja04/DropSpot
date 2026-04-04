@@ -27,7 +27,7 @@ import java.util.List;
 public class HomeFragment extends Fragment implements FeedAdapter.OnItemClickListener {
     private RecyclerView rvHomeFeed;
     private FeedAdapter feedAdapter;
-    private final List<FeedItem> allItems = new ArrayList<>();
+    private final List<Post> allItems = new ArrayList<>();
     private SwipeRefreshLayout swipeRefreshLayout;
 
     @Nullable
@@ -85,18 +85,43 @@ public class HomeFragment extends Fragment implements FeedAdapter.OnItemClickLis
 
     private void loadDummyData() {
         allItems.clear();
-        allItems.add(new FeedItem("Vintage Leather Jacket", "Clothing", "2.5 km", R.drawable.ic_launcher_background));
-        allItems.add(new FeedItem("Antique Wooden Chair", "Furniture", "1.8 km", R.drawable.ic_launcher_background));
-        allItems.add(new FeedItem("Wireless Headphones", "Electronics", "3.1 km", R.drawable.ic_launcher_background));
-        allItems.add(new FeedItem("Graphic T-Shirt", "Clothing", "0.5 km", R.drawable.ic_launcher_background));
+        
+        Post p1 = new Post();
+        p1.id = "1";
+        p1.title = "Vintage Leather Jacket";
+        p1.category = "Clothing";
+        p1.distance = 2.5;
+        allItems.add(p1);
+
+        Post p2 = new Post();
+        p2.id = "2";
+        p2.title = "Antique Wooden Chair";
+        p2.category = "Furniture";
+        p2.distance = 1.8;
+        allItems.add(p2);
+
+        Post p3 = new Post();
+        p3.id = "3";
+        p3.title = "Wireless Headphones";
+        p3.category = "Electronics";
+        p3.distance = 3.1;
+        allItems.add(p3);
+
+        Post p4 = new Post();
+        p4.id = "4";
+        p4.title = "Graphic T-Shirt";
+        p4.category = "Clothing";
+        p4.distance = 0.5;
+        allItems.add(p4);
+
         feedAdapter = new FeedAdapter(allItems, this);
         rvHomeFeed.setAdapter(feedAdapter);
     }
 
     private void filterItems(String category) {
-        List<FeedItem> filteredItems = new ArrayList<>();
-        for (FeedItem item : allItems) {
-            if (item.getCategory().equals(category)) {
+        List<Post> filteredItems = new ArrayList<>();
+        for (Post item : allItems) {
+            if (item.category.equals(category)) {
                 filteredItems.add(item);
             }
         }
@@ -105,23 +130,23 @@ public class HomeFragment extends Fragment implements FeedAdapter.OnItemClickLis
     }
 
     @Override
-    public void onItemClick(FeedItem item) {
+    public void onItemClick(Post item) {
         Intent intent = new Intent(getActivity(), ItemDetailActivity.class);
-        intent.putExtra("ITEM_TITLE", item.getTitle());
-        intent.putExtra("ITEM_CATEGORY", item.getCategory());
-        intent.putExtra("ITEM_DISTANCE", item.getDistance());
-        intent.putExtra("ITEM_IMAGE", item.getImageResource());
+        intent.putExtra("POST_ID", item.id);
+        intent.putExtra("ITEM_TITLE", item.title);
+        intent.putExtra("ITEM_CATEGORY", item.category);
+        intent.putExtra("ITEM_DISTANCE", item.distance);
         startActivity(intent);
     }
 
     @Override
-    public void onItemLongClick(FeedItem item) {
+    public void onItemLongClick(Post item) {
         feedAdapter.showDeleteButton(item);
-        Toast.makeText(getContext(), "Delete option shown for: " + item.getTitle(), Toast.LENGTH_SHORT).show();
+        Toast.makeText(getContext(), "Delete option shown for: " + item.title, Toast.LENGTH_SHORT).show();
     }
 
     @Override
-    public void onDeleteClick(FeedItem item) {
+    public void onDeleteClick(Post item) {
         new AlertDialog.Builder(requireContext())
                 .setTitle("Delete Item")
                 .setMessage("Are you sure you want to delete this item?")

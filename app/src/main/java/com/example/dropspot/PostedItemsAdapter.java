@@ -1,7 +1,6 @@
 package com.example.dropspot;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -9,20 +8,19 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
-
+import com.bumptech.glide.Glide;
 import java.util.List;
 
 public class PostedItemsAdapter extends RecyclerView.Adapter<PostedItemsAdapter.PostedItemsViewHolder> {
 
-    private final List<FeedItem> postedItems;
-    private final SharedPreferences prefs;
+    private final List<Post> postedItems;
+    private final Context context;
 
-    public PostedItemsAdapter(Context context, List<FeedItem> postedItems) {
+    public PostedItemsAdapter(Context context, List<Post> postedItems) {
+        this.context = context;
         this.postedItems = postedItems;
-        this.prefs = context.getSharedPreferences("RequestPrefs", Context.MODE_PRIVATE);
     }
 
     @NonNull
@@ -34,8 +32,8 @@ public class PostedItemsAdapter extends RecyclerView.Adapter<PostedItemsAdapter.
 
     @Override
     public void onBindViewHolder(@NonNull PostedItemsViewHolder holder, int position) {
-        FeedItem item = postedItems.get(position);
-        holder.bind(item, prefs);
+        Post item = postedItems.get(position);
+        holder.bind(item);
     }
 
     @Override
@@ -60,49 +58,36 @@ public class PostedItemsAdapter extends RecyclerView.Adapter<PostedItemsAdapter.
             ownerActions = itemView.findViewById(R.id.owner_actions_layout);
         }
 
-        public void bind(final FeedItem item, final SharedPreferences prefs) {
-            title.setText(item.getTitle());
-            category.setText(item.getCategory());
-            image.setImageResource(item.getImageResource());
+        public void bind(final Post item) {
+            title.setText(item.title);
+            category.setText(item.category);
+            
+            if (item.images != null && !item.images.isEmpty()) {
+                Glide.with(itemView.getContext())
+                    .load(item.images.get(0))
+                    .placeholder(R.drawable.ic_launcher_background)
+                    .into(image);
+            } else {
+                image.setImageResource(R.drawable.ic_launcher_background);
+            }
 
-            String requestStateString = prefs.getString(item.getTitle(), RequestState.NOT_REQUESTED.name());
-            RequestState currentRequestState = RequestState.valueOf(requestStateString);
-
-            updateOwnerUI(currentRequestState);
+            // Logic for requests would go here. For now, let's keep it simple.
+            // If item.requestCount > 0, show owner actions
+            if (item.requestCount > 0) {
+                ownerActions.setVisibility(View.VISIBLE);
+            } else {
+                ownerActions.setVisibility(View.GONE);
+            }
 
             acceptButton.setOnClickListener(v -> {
-                saveRequestState(item.getTitle(), RequestState.ACCEPTED, prefs);
-                updateOwnerUI(RequestState.ACCEPTED);
+                // Logic to accept first request
+                ownerActions.setVisibility(View.GONE);
+                contactDetails.setVisibility(View.VISIBLE);
             });
 
             rejectButton.setOnClickListener(v -> {
-                saveRequestState(item.getTitle(), RequestState.REJECTED, prefs);
-                updateOwnerUI(RequestState.REJECTED);
+                ownerActions.setVisibility(View.GONE);
             });
-        }
-
-        private void updateOwnerUI(RequestState state) {
-            switch (state) {
-                case REQUESTED:
-                    ownerActions.setVisibility(View.VISIBLE);
-                    contactDetails.setVisibility(View.GONE);
-                    break;
-                case ACCEPTED:
-                    ownerActions.setVisibility(View.GONE);
-                    contactDetails.setVisibility(View.VISIBLE);
-                    break;
-                case REJECTED:
-                case NOT_REQUESTED:
-                    ownerActions.setVisibility(View.GONE);
-                    contactDetails.setVisibility(View.GONE);
-                    break;
-            }
-        }
-
-        private void saveRequestState(String itemTitle, RequestState state, SharedPreferences prefs) {
-            SharedPreferences.Editor editor = prefs.edit();
-            editor.putString(itemTitle, state.name());
-            editor.apply();
         }
     }
 }

@@ -12,7 +12,10 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.widget.Toolbar;
 import androidx.fragment.app.Fragment;
+
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 
 public class ProfileFragment extends Fragment {
 
@@ -46,11 +49,23 @@ public class ProfileFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.activity_profile, container, false);
 
+        Toolbar toolbar = view.findViewById(R.id.profile_toolbar);
         TextView tvFullName = view.findViewById(R.id.tvProfileName);
         TextView tvEmail = view.findViewById(R.id.tvProfileEmail);
         Button btnLogout = view.findViewById(R.id.btnLogout);
         Button btnEditProfile = view.findViewById(R.id.btnEditProfile);
         Button btnViewMyPosts = view.findViewById(R.id.btnViewMyPosts);
+
+        if (toolbar != null) {
+            toolbar.setNavigationOnClickListener(v -> {
+                if (getActivity() instanceof MainActivity) {
+                    BottomNavigationView nav = getActivity().findViewById(R.id.bottom_navigation);
+                    if (nav != null) {
+                        nav.setSelectedItemId(R.id.nav_home);
+                    }
+                }
+            });
+        }
 
         if (tvFullName != null) {
             tvFullName.setText(fullName);

@@ -4,6 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/background_light"
     android:padding="24dp"
     tools:context=".LoginActivity">
 
@@ -11,14 +12,26 @@
         android:id="@+id/tvLoginHeader"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="64dp"
-        android:text="DropSpot Login"
-        android:textSize="28sp"
+        android:layout_marginTop="80dp"
+        android:text="DropSpot"
+        android:textColor="@color/colorPrimary"
+        android:textSize="32sp"
         android:textStyle="bold"
-        android:textColor="@android:color/black"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/tvLoginSubHeader"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Log in to your account"
+        android:textColor="@color/textColorSecondary"
+        android:textSize="16sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tvLoginHeader" />
 
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/tilEmail"
@@ -27,17 +40,22 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="48dp"
         android:hint="Email"
+        app:boxCornerRadiusBottomEnd="12dp"
+        app:boxCornerRadiusBottomStart="12dp"
+        app:boxCornerRadiusTopEnd="12dp"
+        app:boxCornerRadiusTopStart="12dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/tvLoginHeader"
-        app:startIconDrawable="@android:drawable/ic_dialog_email">
+        app:layout_constraintTop_toBottomOf="@id/tvLoginSubHeader"
+        app:startIconDrawable="@android:drawable/ic_dialog_email"
+        app:startIconTint="@color/textColorSecondary">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etEmail"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="@android:color/black"
-            android:inputType="textEmailAddress" />
+            android:inputType="textEmailAddress"
+            android:textColor="@color/textColorPrimary" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <com.google.android.material.textfield.TextInputLayout
@@ -47,44 +65,55 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
         android:hint="Password"
+        app:boxCornerRadiusBottomEnd="12dp"
+        app:boxCornerRadiusBottomStart="12dp"
+        app:boxCornerRadiusTopEnd="12dp"
+        app:boxCornerRadiusTopStart="12dp"
         app:endIconMode="password_toggle"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tilEmail"
-        app:startIconDrawable="@android:drawable/ic_lock_idle_lock">
+        app:startIconDrawable="@android:drawable/ic_lock_idle_lock"
+        app:startIconTint="@color/textColorSecondary">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etPassword"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="@android:color/black"
-            android:inputType="textPassword" />
+            android:inputType="textPassword"
+            android:textColor="@color/textColorPrimary" />
     </com.google.android.material.textfield.TextInputLayout>
 
-    <Button
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btnLogin"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
+        android:layout_height="56dp"
         android:layout_marginTop="32dp"
-        android:padding="12dp"
         android:text="Login"
         android:textAllCaps="false"
         android:textSize="16sp"
+        app:cornerRadius="12dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tilPassword" />
 
-    <Button
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btnGoogleSignIn"
         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
+        android:layout_height="56dp"
         android:layout_marginTop="16dp"
         android:text="Continue with Google"
+        android:textAllCaps="false"
+        android:textColor="@color/textColorPrimary"
+        app:cornerRadius="12dp"
         app:icon="@android:drawable/ic_menu_myplaces"
-        app:layout_constraintTop_toBottomOf="@+id/btnLogin"
+        app:iconGravity="textStart"
+        app:iconTint="@android:color/black"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
+        app:layout_constraintTop_toBottomOf="@+id/btnLogin"
+        app:strokeColor="@color/divider_color" />
 
     <LinearLayout
         android:id="@+id/llRegisterLink"
@@ -100,14 +129,14 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="New user? "
-            android:textColor="@android:color/black" />
+            android:textColor="@color/textColorSecondary" />
 
         <TextView
             android:id="@+id/tvRegister"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Register here"
-            android:textColor="@android:color/black"
+            android:textColor="@color/colorPrimary"
             android:textStyle="bold" />
     </LinearLayout>
 

@@ -8,24 +8,23 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
-import java.util.HashSet;
+import com.bumptech.glide.Glide;
 import java.util.List;
-import java.util.Set;
 
 public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder> {
 
     public interface OnItemClickListener {
-        void onItemClick(FeedItem item);
-        void onItemLongClick(FeedItem item);
-        void onDeleteClick(FeedItem item);
+        void onItemClick(Post item);
+        void onItemLongClick(Post item);
+        void onDeleteClick(Post item);
     }
 
-    private final List<FeedItem> feedItems;
+    private final List<Post> posts;
     private final OnItemClickListener listener;
-    private final Set<FeedItem> itemsWithDeleteVisible = new HashSet<>();
+    private Post itemWithDeleteVisible;
 
-    public FeedAdapter(List<FeedItem> feedItems, OnItemClickListener listener) {
-        this.feedItems = feedItems;
+    public FeedAdapter(List<Post> posts, OnItemClickListener listener) {
+        this.posts = posts;
         this.listener = listener;
     }
 
@@ -38,33 +37,29 @@ public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder
 
     @Override
     public void onBindViewHolder(@NonNull FeedViewHolder holder, int position) {
-        FeedItem item = feedItems.get(position);
-        holder.bind(item, listener, itemsWithDeleteVisible.contains(item));
+        Post item = posts.get(position);
+        holder.bind(item, listener, item == itemWithDeleteVisible);
     }
 
     @Override
     public int getItemCount() {
-        return feedItems.size();
+        return posts.size();
     }
 
-    public void removeItem(FeedItem item) {
-        int position = feedItems.indexOf(item);
+    public void showDeleteButton(Post item) {
+        itemWithDeleteVisible = item;
+        notifyDataSetChanged();
+    }
+
+    public void removeItem(Post item) {
+        int position = posts.indexOf(item);
         if (position != -1) {
-            feedItems.remove(position);
-            itemsWithDeleteVisible.remove(item);
+            posts.remove(position);
             notifyItemRemoved(position);
         }
     }
 
-    public void showDeleteButton(FeedItem item) {
-        itemsWithDeleteVisible.add(item);
-        int position = feedItems.indexOf(item);
-        if (position != -1) {
-            notifyItemChanged(position);
-        }
-    }
-
-    class FeedViewHolder extends RecyclerView.ViewHolder {
+    static class FeedViewHolder extends RecyclerView.ViewHolder {
         TextView title, category, distance;
         ImageView image;
         ImageButton btnDelete;
@@ -78,28 +73,31 @@ public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder
             btnDelete = itemView.findViewById(R.id.btnDelete);
         }
 
-        public void bind(final FeedItem item, final OnItemClickListener listener, boolean showDelete) {
-            title.setText(item.getTitle());
-            category.setText(item.getCategory());
-            distance.setText(item.getDistance());
-            image.setImageResource(item.getImageResource());
+        public void bind(final Post item, final OnItemClickListener listener, boolean showDelete) {
+            title.setText(item.title);
+            category.setText(item.category);
+            distance.setText(String.format("%.1f km away", item.distance));
             
-            btnDelete.setVisibility(showDelete ? View.VISIBLE : View.GONE);
-            btnDelete.setOnClickListener(v -> listener.onDeleteClick(item));
-
-            itemView.setOnClickListener(v -> {
-                if (itemsWithDeleteVisible.contains(item)) {
-                    itemsWithDeleteVisible.remove(item);
-                    notifyItemChanged(getAdapterPosition());
-                } else {
-                    listener.onItemClick(item);
-                }
-            });
-
+            if (item.images != null && !item.images.isEmpty()) {
+                Glide.with(itemView.getContext())
+                    .load(item.images.get(0))
+                    .placeholder(R.drawable.ic_launcher_background)
+                    .error(R.drawable.ic_launcher_background)
+                    .into(image);
+            } else {
+                image.setImageResource(R.drawable.ic_launcher_background);
+            }
+            
+            itemView.setOnClickListener(v -> listener.onItemClick(item));
             itemView.setOnLongClickListener(v -> {
                 listener.onItemLongClick(item);
                 return true;
             });
+
+            if (btnDelete != null) {
+                btnDelete.setVisibility(showDelete ? View.VISIBLE : View.GONE);
+                btnDelete.setOnClickListener(v -> listener.onDeleteClick(item));
+            }
         }
     }
 }

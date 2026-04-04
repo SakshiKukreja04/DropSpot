@@ -1,12 +1,6 @@
 import express from 'express';
-import { db } from '../config/firebase.js';
-import {
-  generateId,
-  getCurrentTimestamp,
-  validateRequestData,
-  successResponse,
-  errorResponse,
-} from '../utils/helpers.js';
+import { db, FieldValue } from '../config/firebase.js';
+import { generateId, getCurrentTimestamp, successResponse, errorResponse } from '../utils/helpers.js';
 
 const router = express.Router();
 
@@ -18,145 +12,81 @@ router.post('/', async (req, res, next) => {
     const { postId, message } = req.body;
     const userId = req.user.uid;
 
-    // Validate input
-    const validation = validateRequestData(req.body);
-    if (!validation.isValid) {
-      return res.status(400).json(errorResponse('Validation failed', 'VALIDATION_ERROR', 400, validation.errors));
+    if (!postId || !message) {
+      return res.status(400).json(errorResponse('Post ID and message are required', 'VALIDATION_ERROR', 400));
     }
 
-    // Check if post exists
     const postDoc = await db.collection('posts').doc(postId).get();
-    if (!postDoc.exists) {
-      return res.status(404).json(errorResponse('Post not found', 'NOT_FOUND', 404));
-    }
+    if (!postDoc.exists) return res.status(404).json(errorResponse('Post not found', 'NOT_FOUND', 404));
 
     const post = postDoc.data();
+    if (post.userId === userId) return res.status(400).json(errorResponse('Cannot request your own post', 'INVALID_REQUEST', 400));
+    if (!post.isActive) return res.status(400).json(errorResponse('Post is no longer active', 'INVALID_REQUEST', 400));
 
-    // Check if user is the post owner
-    if (post.userId === userId) {
-      return res.status(400).json(errorResponse('Cannot request your own post', 'INVALID_REQUEST', 400));
-    }
-
-    // Check for duplicate request
-    const existingRequest = await db
-      .collection('requests')
+    // Prevent duplicate requests
+    const existing = await db.collection('requests')
       .where('postId', '==', postId)
       .where('requesterId', '==', userId)
-      .where('status', '!=', 'rejected')
       .get();
+    if (!existing.empty) return res.status(400).json(errorResponse('Duplicate request', 'DUPLICATE_REQUEST', 400));
 
-    if (!existingRequest.empty) {
-      return res.status(400).json(errorResponse('You have already requested this item', 'DUPLICATE_REQUEST', 400));
-    }
-
-    // Create request
     const requestId = generateId();
+    const timestamp = getCurrentTimestamp();
     const request = {
-      id: requestId,
-      postId,
-      postTitle: post.title,
-      postOwnerId: post.userId,
-      requesterId: userId,
-      requesterName: req.user.name,
-      requesterEmail: req.user.email,
-      requesterPhoto: req.user.picture,
-      message,
-      status: 'pending', // pending, accepted, rejected
-      createdAt: getCurrentTimestamp(),
-      respondedAt: null,
-      respondedBy: null,
-    };
-
-    // Save request
-    await db.collection('requests').doc(requestId).set(request);
-
-    // Add to post owner's requests
-    await db.collection('users').doc(post.userId).collection('requests').doc(requestId).set({
       requestId,
       postId,
+      postOwnerId: post.userId,
       requesterId: userId,
-      createdAt: getCurrentTimestamp(),
-    });
+      message,
+      status: 'pending',
+      createdAt: timestamp,
+      respondedAt: null
+    };
 
-    // Increment request count on post
-    await db.collection('posts').doc(postId).update({
-      requestCount: (post.requestCount || 0) + 1,
-    });
+    await db.collection('requests').doc(requestId).set(request);
+    await db.collection('posts').doc(postId).update({ requestCount: FieldValue.increment(1) });
 
-    // Create notification for post owner
+    // Trigger notification
     const notificationId = generateId();
     await db.collection('notifications').doc(notificationId).set({
-      id: notificationId,
+      notificationId,
       userId: post.userId,
-      type: 'new_request',
-      title: `New request for "${post.title}"`,
-      message: `${req.user.name} requested your item`,
+      type: 'request_received',
+      title: 'New Request',
+      message: `Someone requested your item: ${post.title}`,
       relatedId: requestId,
       relatedType: 'request',
       read: false,
-      createdAt: getCurrentTimestamp(),
+      createdAt: timestamp
     });
 
-    res.status(201).json(successResponse(request, 'Request created successfully'));
+    res.status(201).json(successResponse(request, 'Request sent'));
   } catch (error) {
-    console.error('Error creating request:', error);
     next(error);
   }
 });
 
 /**
- * GET /requests - Get user's requests (received and sent)
+ * GET /requests - Get requests with strictly defined filtering
  */
 router.get('/', async (req, res, next) => {
   try {
-    const { type = 'received' } = req.query;
+    const { type } = req.query; // 'sent' or 'received'
     const userId = req.user.uid;
 
-    let query;
+    let query = db.collection('requests');
     if (type === 'sent') {
-      query = db.collection('requests').where('requesterId', '==', userId);
+      query = query.where('requesterId', '==', userId);
     } else {
-      query = db.collection('requests').where('postOwnerId', '==', userId);
+      query = query.where('postOwnerId', '==', userId);
     }
 
     const snapshot = await query.orderBy('createdAt', 'desc').get();
-
     const requests = [];
-    snapshot.forEach((doc) => {
-      requests.push(doc.data());
-    });
+    snapshot.forEach(doc => requests.push(doc.data()));
 
-    res.status(200).json(successResponse({ requests, count: requests.length }, 'Requests retrieved successfully'));
+    res.status(200).json(successResponse({ requests, count: requests.length }, 'Requests fetched'));
   } catch (error) {
-    console.error('Error getting requests:', error);
-    next(error);
-  }
-});
-
-/**
- * GET /requests/:id - Get request details
- */
-router.get('/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.uid;
-
-    const doc = await db.collection('requests').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Request not found', 'NOT_FOUND', 404));
-    }
-
-    const request = doc.data();
-
-    // Check authorization
-    if (request.postOwnerId !== userId && request.requesterId !== userId) {
-      return res.status(403).json(errorResponse('Unauthorized to view this request', 'FORBIDDEN', 403));
-    }
-
-    res.status(200).json(successResponse(request, 'Request retrieved successfully'));
-  } catch (error) {
-    console.error('Error getting request:', error);
     next(error);
   }
 });
@@ -167,129 +97,58 @@ router.get('/:id', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { status } = req.body; // 'accepted' or 'rejected'
+    const { status } = req.body; // 'accepted' | 'rejected'
     const userId = req.user.uid;
 
-    // Validate status
-    if (!['accepted', 'rejected'].includes(status)) {
-      return res.status(400).json(errorResponse('Invalid status', 'INVALID_STATUS', 400));
-    }
+    if (!['accepted', 'rejected'].includes(status)) return res.status(400).json(errorResponse('Invalid status', 'INVALID_INPUT', 400));
 
     const doc = await db.collection('requests').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Request not found', 'NOT_FOUND', 404));
-    }
+    if (!doc.exists) return res.status(404).json(errorResponse('Request not found', 'NOT_FOUND', 404));
 
     const request = doc.data();
+    if (request.postOwnerId !== userId) return res.status(403).json(errorResponse('Unauthorized', 'FORBIDDEN', 403));
+    if (request.status !== 'pending') return res.status(400).json(errorResponse('Already processed', 'INVALID_REQUEST', 400));
 
-    // Check authorization (only post owner can accept/reject)
-    if (request.postOwnerId !== userId) {
-      return res.status(403).json(errorResponse('Unauthorized to update this request', 'FORBIDDEN', 403));
-    }
+    const timestamp = getCurrentTimestamp();
+    const batch = db.batch();
 
-    // Check if already responded
-    if (request.status !== 'pending') {
-      return res.status(400).json(errorResponse('Request already responded to', 'ALREADY_RESPONDED', 400));
-    }
+    batch.update(db.collection('requests').doc(id), { status, respondedAt: timestamp });
 
-    // Update request
-    await db.collection('requests').doc(id).update({
-      status,
-      respondedAt: getCurrentTimestamp(),
-      respondedBy: userId,
-    });
-
-    // If accepted, update post to inactive
     if (status === 'accepted') {
-      await db.collection('posts').doc(request.postId).update({
-        isActive: false,
-        acceptedRequestId: id,
-      });
+      // mark post as isActive = false
+      batch.update(db.collection('posts').doc(request.postId), { isActive: false, updatedAt: timestamp });
 
-      // Reject all other pending requests for this post
-      const otherRequests = await db
-        .collection('requests')
+      // auto-reject other pending requests
+      const others = await db.collection('requests')
         .where('postId', '==', request.postId)
         .where('status', '==', 'pending')
         .get();
 
-      otherRequests.forEach(async (doc) => {
-        if (doc.id !== id) {
-          await db.collection('requests').doc(doc.id).update({
-            status: 'rejected_auto',
-            respondedAt: getCurrentTimestamp(),
-            respondedBy: userId,
-          });
+      others.forEach(oDoc => {
+        if (oDoc.id !== id) {
+          batch.update(oDoc.ref, { status: 'rejected', respondedAt: timestamp });
         }
       });
     }
 
-    // Create notification for requester
-    const notificationId = generateId();
-    const notificationTitle = status === 'accepted' ? 'Request accepted!' : 'Request rejected';
-    const notificationMessage =
-      status === 'accepted'
-        ? `Your request for "${request.postTitle}" was accepted by the owner!`
-        : `Your request for "${request.postTitle}" was rejected`;
+    await batch.commit();
 
+    // Trigger notification for requester
+    const notificationId = generateId();
     await db.collection('notifications').doc(notificationId).set({
-      id: notificationId,
+      notificationId,
       userId: request.requesterId,
       type: `request_${status}`,
-      title: notificationTitle,
-      message: notificationMessage,
+      title: status === 'accepted' ? 'Request Accepted' : 'Request Rejected',
+      message: `Your request for an item has been ${status}.`,
       relatedId: id,
       relatedType: 'request',
       read: false,
-      createdAt: getCurrentTimestamp(),
+      createdAt: timestamp
     });
 
-    const updatedRequest = { ...request, status, respondedAt: getCurrentTimestamp(), respondedBy: userId };
-
-    res.status(200).json(successResponse(updatedRequest, `Request ${status} successfully`));
+    res.status(200).json(successResponse(null, `Request ${status}`));
   } catch (error) {
-    console.error('Error updating request:', error);
-    next(error);
-  }
-});
-
-/**
- * DELETE /requests/:id - Cancel a request
- */
-router.delete('/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.uid;
-
-    const doc = await db.collection('requests').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Request not found', 'NOT_FOUND', 404));
-    }
-
-    const request = doc.data();
-
-    // Check authorization (only requester can cancel pending request)
-    if (request.requesterId !== userId || request.status !== 'pending') {
-      return res.status(403).json(errorResponse('Cannot cancel this request', 'FORBIDDEN', 403));
-    }
-
-    // Delete request
-    await db.collection('requests').doc(id).delete();
-
-    // Update request count on post
-    const postDoc = await db.collection('posts').doc(request.postId).get();
-    if (postDoc.exists) {
-      const post = postDoc.data();
-      await db.collection('posts').doc(request.postId).update({
-        requestCount: Math.max(0, (post.requestCount || 1) - 1),
-      });
-    }
-
-    res.status(200).json(successResponse(null, 'Request cancelled successfully'));
-  } catch (error) {
-    console.error('Error deleting request:', error);
     next(error);
   }
 });

@@ -4,6 +4,9 @@
 
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
         android:allowBackup="true"
@@ -13,7 +16,8 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.DropSpot">
+        android:theme="@style/Theme.DropSpot"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".WelcomeActivity"
             android:exported="true">
@@ -27,6 +31,7 @@
         <activity android:name=".RegistrationActivity" />
         <activity android:name=".HomeActivity" />
         <activity android:name=".PostItemActivity" />
+        <activity android:name=".CreateEventActivity" />
         <activity android:name=".ItemDetailActivity" />
         <activity android:name=".ProfileActivity" />
         <activity android:name=".PostedItemsActivity" />

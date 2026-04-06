@@ -18,14 +18,12 @@ router.post('/', async (req, res, next) => {
     const { title, description, category, condition, price, images, latitude, longitude } = req.body;
     const userId = req.user.uid;
 
-    // Strict validation
     if (!title || !description || !category || !condition) {
       return res.status(400).json(errorResponse('Missing required fields', 'VALIDATION_ERROR', 400));
     }
 
-    // Ensure coordinates are present and not null
     if (latitude === undefined || latitude === null || longitude === undefined || longitude === null) {
-      return res.status(400).json(errorResponse('Location coordinates (latitude and longitude) are required', 'VALIDATION_ERROR', 400));
+      return res.status(400).json(errorResponse('Location coordinates are required', 'VALIDATION_ERROR', 400));
     }
 
     const postId = generateId();
@@ -51,7 +49,6 @@ router.post('/', async (req, res, next) => {
 
     await db.collection('posts').doc(postId).set(post);
 
-    // Increment user's post count
     await db.collection('users').doc(userId).update({
       postsCount: FieldValue.increment(1),
       updatedAt: timestamp
@@ -88,32 +85,24 @@ router.get('/', async (req, res, next) => {
 
     snapshot.forEach(doc => {
       const data = doc.data();
-      // Exclude current user's posts from home feed unless specifically requested
       if (myPostsOnly !== 'true' && data.userId === currentUserId) return;
       posts.push(data);
     });
 
-    // Distance filtering
-    if (latitude !== undefined && longitude !== undefined && latitude !== null && longitude !== null) {
+    if (latitude !== undefined && longitude !== undefined) {
       const userLat = parseFloat(latitude);
       const userLon = parseFloat(longitude);
       const maxDist = parseFloat(maxDistance);
 
       posts = posts
-        .map(post => {
-          const dist = calculateDistance(userLat, userLon, post.latitude, post.longitude);
-          return { ...post, distance: dist };
-        })
+        .map(post => ({ ...post, distance: calculateDistance(userLat, userLon, post.latitude, post.longitude) }))
         .filter(post => post.distance <= maxDist)
         .sort((a, b) => a.distance - b.distance);
     } else {
-      // Sort by newest if no location
       posts.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     }
 
-    // Pagination
     const paginatedPosts = posts.slice(Number(offset), Number(offset) + Number(limit));
-
     res.status(200).json(successResponse({ posts: paginatedPosts, count: posts.length }, 'Posts retrieved successfully'));
   } catch (error) {
     next(error);
@@ -121,7 +110,7 @@ router.get('/', async (req, res, next) => {
 });
 
 /**
- * GET /posts/:id - Get a single post by ID
+ * GET /posts/:id - Get a single post by ID with owner details
  */
 router.get('/:id', async (req, res, next) => {
   try {
@@ -133,8 +122,27 @@ router.get('/:id', async (req, res, next) => {
     }
 
     const post = doc.data();
+
+    // Fetch owner details using the 'userId' field from the post
+    const ownerId = post.userId;
+    if (ownerId) {
+        const userDoc = await db.collection('users').doc(ownerId).get();
+        if (userDoc.exists) {
+            const userData = userDoc.data();
+            // Try different possible name fields used in registration/login
+            post.ownerName = userData.name || userData.fullName || userData.displayName || 'Anonymous';
+            post.ownerEmail = userData.email;
+            post.ownerPhoto = userData.photo || userData.photoURL || userData.photoUri;
+
+            console.log(`Found owner ${post.ownerName} for post ${id}`);
+        } else {
+            console.log(`Owner document ${ownerId} not found for post ${id}`);
+        }
+    }
+
     res.status(200).json(successResponse(post, 'Post retrieved successfully'));
   } catch (error) {
+    console.error(`Error fetching post ${id}:`, error);
     next(error);
   }
 });

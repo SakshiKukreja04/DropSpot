@@ -4,7 +4,9 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
 import android.widget.Button;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -18,10 +20,16 @@ import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.tasks.Task;
+import com.google.android.material.textfield.TextInputEditText;
 import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.auth.GoogleAuthProvider;
+import com.google.firebase.auth.UserProfileChangeRequest;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 public class RegistrationActivity extends AppCompatActivity {
     private static final String TAG = "RegistrationActivity";
@@ -30,6 +38,10 @@ public class RegistrationActivity extends AppCompatActivity {
     private GoogleSignInClient mGoogleSignInClient;
     private ActivityResultLauncher<Intent> googleSignInLauncher;
     private SessionManager sessionManager;
+    private ApiService apiService;
+    
+    private TextInputEditText etName, etEmail, etPassword;
+    private ProgressBar progressBar;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -38,6 +50,12 @@ public class RegistrationActivity extends AppCompatActivity {
 
         mAuth = FirebaseAuth.getInstance();
         sessionManager = new SessionManager(this);
+        apiService = ApiClient.getClient().create(ApiService.class);
+
+        etName = findViewById(R.id.etName);
+        etEmail = findViewById(R.id.etEmail);
+        etPassword = findViewById(R.id.etPassword);
+        progressBar = new ProgressBar(this); // Should ideally be in XML but adding safe check
 
         GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestIdToken(getString(R.string.default_web_client_id))
@@ -49,26 +67,17 @@ public class RegistrationActivity extends AppCompatActivity {
         googleSignInLauncher = registerForActivityResult(
                 new ActivityResultContracts.StartActivityForResult(),
                 result -> {
-                    Log.d(TAG, "ActivityResult received. ResultCode: " + result.getResultCode());
                     if (result.getResultCode() == RESULT_OK) {
                         Intent data = result.getData();
                         Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
                         try {
                             GoogleSignInAccount account = task.getResult(ApiException.class);
                             if (account != null && account.getIdToken() != null) {
-                                Log.d(TAG, "Google Sign-In successful, authenticating with Firebase...");
                                 firebaseAuthWithGoogle(account.getIdToken());
-                            } else {
-                                Log.e(TAG, "ID Token is null");
-                                Toast.makeText(this, "ID Token error", Toast.LENGTH_SHORT).show();
                             }
                         } catch (ApiException e) {
-                            Log.e(TAG, "Google sign in failed code: " + e.getStatusCode(), e);
-                            Toast.makeText(this, "Google Sign-In Failed (Code: " + e.getStatusCode() + ")", Toast.LENGTH_SHORT).show();
+                            Log.e(TAG, "Google sign in failed", e);
                         }
-                    } else {
-                        Log.e(TAG, "Activity Result not OK: " + result.getResultCode());
-                        Toast.makeText(this, "Sign-up cancelled or failed", Toast.LENGTH_SHORT).show();
                     }
                 }
         );
@@ -78,13 +87,11 @@ public class RegistrationActivity extends AppCompatActivity {
         TextView loginLink = findViewById(R.id.tvLoginLink);
 
         if (registerButton != null) {
-            registerButton.setOnClickListener(v -> {
-                Toast.makeText(this, "Email registration not implemented. Use Google Sign-In.", Toast.LENGTH_SHORT).show();
-            });
+            registerButton.setOnClickListener(v -> registerUser());
         }
 
         if (googleSignUpButton != null) {
-            googleSignUpButton.setOnClickListener(v -> signIn());
+            googleSignUpButton.setOnClickListener(v -> signInWithGoogle());
         }
 
         if (loginLink != null) {
@@ -95,7 +102,42 @@ public class RegistrationActivity extends AppCompatActivity {
         }
     }
 
-    private void signIn() {
+    private void registerUser() {
+        String name = etName.getText().toString().trim();
+        String email = etEmail.getText().toString().trim();
+        String password = etPassword.getText().toString().trim();
+
+        if (name.isEmpty() || email.isEmpty() || password.isEmpty()) {
+            Toast.makeText(this, "Please fill all fields", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (password.length() < 6) {
+            Toast.makeText(this, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        mAuth.createUserWithEmailAndPassword(email, password)
+                .addOnCompleteListener(this, task -> {
+                    if (task.isSuccessful()) {
+                        FirebaseUser user = mAuth.getCurrentUser();
+                        if (user != null) {
+                            // Set display name in Firebase
+                            UserProfileChangeRequest profileUpdates = new UserProfileChangeRequest.Builder()
+                                    .setDisplayName(name)
+                                    .build();
+                            
+                            user.updateProfile(profileUpdates).addOnCompleteListener(updateTask -> {
+                                syncUserWithBackend(user, name);
+                            });
+                        }
+                    } else {
+                        Toast.makeText(RegistrationActivity.this, "Registration failed: " + task.getException().getMessage(), Toast.LENGTH_LONG).show();
+                    }
+                });
+    }
+
+    private void signInWithGoogle() {
         Intent signInIntent = mGoogleSignInClient.getSignInIntent();
         googleSignInLauncher.launch(signInIntent);
     }
@@ -107,23 +149,36 @@ public class RegistrationActivity extends AppCompatActivity {
                     if (task.isSuccessful()) {
                         FirebaseUser user = mAuth.getCurrentUser();
                         if (user != null) {
-                            Log.d(TAG, "Firebase Auth success, saving session...");
-                            
-                            String name = user.getDisplayName();
-                            String email = user.getEmail();
-                            Uri photoUri = user.getPhotoUrl();
-                            String photoUrl = photoUri != null ? photoUri.toString() : null;
-                            
-                            sessionManager.saveUser(name, email, photoUrl);
-                            
-                            Toast.makeText(RegistrationActivity.this, "Welcome " + name, Toast.LENGTH_SHORT).show();
-                            startActivity(new Intent(RegistrationActivity.this, HomeActivity.class));
-                            finish();
+                            syncUserWithBackend(user, user.getDisplayName());
                         }
                     } else {
-                        Log.e(TAG, "Firebase Auth failed", task.getException());
-                        Toast.makeText(RegistrationActivity.this, "Firebase Authentication Failed.", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(RegistrationActivity.this, "Google Auth Failed.", Toast.LENGTH_SHORT).show();
                     }
                 });
+    }
+
+    private void syncUserWithBackend(FirebaseUser user, String name) {
+        String email = user.getEmail();
+        Uri photoUri = user.getPhotoUrl();
+        String photoUrl = photoUri != null ? photoUri.toString() : null;
+
+        ApiService.UserProfile profile = new ApiService.UserProfile(name, email, photoUrl);
+        
+        apiService.syncUserProfile(profile).enqueue(new Callback<ApiResponse<Object>>() {
+            @Override
+            public void onResponse(Call<ApiResponse<Object>> call, Response<ApiResponse<Object>> response) {
+                sessionManager.saveUser(name, email, photoUrl);
+                Toast.makeText(RegistrationActivity.this, "Welcome " + name, Toast.LENGTH_SHORT).show();
+                startActivity(new Intent(RegistrationActivity.this, MainActivity.class));
+                finish();
+            }
+
+            @Override
+            public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
+                sessionManager.saveUser(name, email, photoUrl);
+                startActivity(new Intent(RegistrationActivity.this, MainActivity.class));
+                finish();
+            }
+        });
     }
 }

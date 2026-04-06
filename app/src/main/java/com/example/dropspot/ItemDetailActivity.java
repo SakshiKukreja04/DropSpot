@@ -25,8 +25,8 @@ import retrofit2.Response;
 
 public class ItemDetailActivity extends AppCompatActivity implements RequestAdapter.OnRequestActionListener {
     private static final String TAG = "ItemDetailActivity";
-    private ImageView ivItemImage;
-    private TextView tvTitle, tvCategory, tvDescription, tvDistance, tvPrice;
+    private ImageView ivItemImage, ivOwnerPhoto;
+    private TextView tvTitle, tvCategory, tvDescription, tvDistance, tvPrice, tvCondition, tvOwnerName, tvOwnerEmail;
     private ApiService apiService;
     private String postId;
     private Post currentPost;
@@ -34,7 +34,7 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
     private RecyclerView rvRequests;
     private RequestAdapter requestAdapter;
     private List<Request> requestList = new ArrayList<>();
-    private LinearLayout requestsSection;
+    private LinearLayout requestsSection, ownerInfoSection;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,6 +44,17 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
         apiService = ApiClient.getClient().create(ApiService.class);
         postId = getIntent().getStringExtra("POST_ID");
 
+        initViews();
+        setupRequestsRecyclerView();
+
+        if (postId != null) {
+            loadPostDetails();
+        }
+
+        btnRequestItem.setOnClickListener(v -> sendRequest());
+    }
+
+    private void initViews() {
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         if (getSupportActionBar() != null) {
@@ -56,19 +67,15 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
         tvCategory = findViewById(R.id.tv_category_detail);
         tvDescription = findViewById(R.id.tv_description_detail);
         tvDistance = findViewById(R.id.tv_distance_detail);
+        tvPrice = findViewById(R.id.tv_price_detail);
+        tvCondition = findViewById(R.id.tv_condition_detail);
+        tvOwnerName = findViewById(R.id.tv_owner_name);
+        tvOwnerEmail = findViewById(R.id.tv_owner_email);
         ivItemImage = findViewById(R.id.iv_item_image_detail);
+        ivOwnerPhoto = findViewById(R.id.iv_owner_photo);
         btnRequestItem = findViewById(R.id.btn_request_item);
         requestsSection = findViewById(R.id.requests_section);
-        
-        setupRequestsRecyclerView();
-
-        if (postId != null) {
-            loadPostDetails();
-        }
-
-        if (btnRequestItem != null) {
-            btnRequestItem.setOnClickListener(v -> sendRequest());
-        }
+        ownerInfoSection = findViewById(R.id.owner_info_section);
     }
 
     private void setupRequestsRecyclerView() {
@@ -90,41 +97,39 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
                         displayPost(currentPost);
                         checkOwnershipAndLoadRequests();
                         checkIfAlreadyRequested();
-                    } else {
-                        Toast.makeText(ItemDetailActivity.this, "Post not found", Toast.LENGTH_SHORT).show();
                     }
-                } else {
-                    Toast.makeText(ItemDetailActivity.this, "Failed to load details", Toast.LENGTH_SHORT).show();
                 }
             }
 
             @Override
             public void onFailure(@NonNull Call<ApiResponse<Post>> call, @NonNull Throwable t) {
-                Toast.makeText(ItemDetailActivity.this, "Network error", Toast.LENGTH_SHORT).show();
+                Toast.makeText(ItemDetailActivity.this, "Failed to load details", Toast.LENGTH_SHORT).show();
             }
         });
     }
 
     private void displayPost(Post post) {
-        tvTitle.setText(post.title != null ? post.title : "No Title");
-        tvCategory.setText(post.category != null ? post.category : "No Category");
-        tvDescription.setText(post.description != null ? post.description : "No Description");
+        tvTitle.setText(post.title);
+        tvCategory.setText(post.category);
+        tvDescription.setText(post.description);
+        tvPrice.setText(String.format("₹%.2f", post.price));
+        tvCondition.setText(post.condition);
+        tvDistance.setText(String.format("%.1f km away", post.distance));
         
-        // Show distance if available, otherwise show price or something else
-        if (post.distance > 0) {
-            tvDistance.setText(String.format("%.1f km away", post.distance));
-        } else {
-            tvDistance.setText(String.format("$%.2f", post.price));
+        tvOwnerName.setText(post.ownerName != null && !post.ownerName.isEmpty() ? post.ownerName : "Unknown Owner");
+        tvOwnerEmail.setText(post.ownerEmail != null ? post.ownerEmail : "");
+        
+        if (post.ownerPhoto != null && !post.ownerPhoto.isEmpty()) {
+            Glide.with(this).load(post.ownerPhoto).circleCrop().placeholder(R.drawable.ic_launcher_background).into(ivOwnerPhoto);
         }
-        
+
         if (post.images != null && !post.images.isEmpty()) {
-            Glide.with(this)
-                .load(post.images.get(0))
-                .placeholder(R.drawable.ic_launcher_background)
-                .error(R.drawable.ic_launcher_background)
-                .into(ivItemImage);
-        } else {
-            ivItemImage.setImageResource(R.drawable.ic_launcher_background);
+            Glide.with(this).load(post.images.get(0)).placeholder(R.drawable.ic_launcher_background).into(ivItemImage);
+        }
+
+        if (!post.isActive) {
+            btnRequestItem.setEnabled(false);
+            btnRequestItem.setText("Item No Longer Available");
         }
     }
 
@@ -133,18 +138,14 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
         if (currentUser == null || currentPost == null) return;
 
         if (currentUser.getUid().equals(currentPost.userId)) {
-            // I am the owner
             btnRequestItem.setVisibility(View.GONE);
-            if (requestsSection != null) {
-                requestsSection.setVisibility(View.VISIBLE);
-            }
+            ownerInfoSection.setVisibility(View.GONE);
+            requestsSection.setVisibility(View.VISIBLE);
             loadRequestsForPost();
         } else {
-            // I am a viewer
             btnRequestItem.setVisibility(View.VISIBLE);
-            if (requestsSection != null) {
-                requestsSection.setVisibility(View.GONE);
-            }
+            ownerInfoSection.setVisibility(View.VISIBLE);
+            requestsSection.setVisibility(View.GONE);
         }
     }
 
@@ -170,9 +171,7 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
             }
 
             @Override
-            public void onFailure(Call<ApiResponse<List<Request>>> call, Throwable t) {
-                Log.e(TAG, "Error checking sent requests", t);
-            }
+            public void onFailure(Call<ApiResponse<List<Request>>> call, Throwable t) {}
         });
     }
 
@@ -197,9 +196,7 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
             }
 
             @Override
-            public void onFailure(Call<ApiResponse<List<Request>>> call, Throwable t) {
-                Log.e(TAG, "Error loading requests", t);
-            }
+            public void onFailure(Call<ApiResponse<List<Request>>> call, Throwable t) {}
         });
     }
 
@@ -214,43 +211,72 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
                     btnRequestItem.setText("Request Sent");
                 } else {
                     btnRequestItem.setEnabled(true);
-                    Toast.makeText(ItemDetailActivity.this, "Failed to send request", Toast.LENGTH_SHORT).show();
                 }
             }
 
             @Override
             public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
                 btnRequestItem.setEnabled(true);
-                Toast.makeText(ItemDetailActivity.this, "Network error", Toast.LENGTH_SHORT).show();
             }
         });
     }
 
     @Override
     public void onAccept(Request request) {
-        updateStatus(request.id, "accepted");
+        String rid = request.getEffectiveId();
+        if (rid == null) {
+            Toast.makeText(this, "Error: Request ID is missing", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        updateStatus(rid, "accepted");
     }
 
     @Override
     public void onReject(Request request) {
-        updateStatus(request.id, "rejected");
+        String rid = request.getEffectiveId();
+        if (rid == null) {
+            Toast.makeText(this, "Error: Request ID is missing", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        updateStatus(rid, "rejected");
     }
 
     private void updateStatus(String requestId, String status) {
+        Log.d(TAG, "Updating request: " + requestId + " to " + status);
         apiService.updateRequestStatus(requestId, new ApiService.StatusUpdate(status)).enqueue(new Callback<ApiResponse<Object>>() {
             @Override
             public void onResponse(Call<ApiResponse<Object>> call, Response<ApiResponse<Object>> response) {
                 if (response.isSuccessful()) {
-                    Toast.makeText(ItemDetailActivity.this, "Status updated to " + status, Toast.LENGTH_SHORT).show();
-                    loadRequestsForPost(); // Refresh list
+                    if ("accepted".equals(status)) {
+                        closePostAfterAcceptance();
+                    } else {
+                        loadRequestsForPost();
+                    }
                 } else {
-                    Toast.makeText(ItemDetailActivity.this, "Failed to update status", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(ItemDetailActivity.this, "Failed to update request", Toast.LENGTH_SHORT).show();
                 }
             }
 
             @Override
             public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
                 Toast.makeText(ItemDetailActivity.this, "Network error", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void closePostAfterAcceptance() {
+        if (currentPost == null) return;
+
+        currentPost.isActive = false;
+        apiService.updatePost(currentPost.id, currentPost).enqueue(new Callback<ApiResponse<Post>>() {
+            @Override
+            public void onResponse(Call<ApiResponse<Post>> call, Response<ApiResponse<Post>> response) {
+                loadPostDetails(); // Refresh everything
+            }
+
+            @Override
+            public void onFailure(Call<ApiResponse<Post>> call, Throwable t) {
+                loadPostDetails();
             }
         });
     }

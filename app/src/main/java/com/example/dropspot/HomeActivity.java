@@ -120,7 +120,8 @@ public class HomeActivity extends AppCompatActivity implements FeedAdapter.OnIte
         isRefreshing = true;
         if (swipeRefreshLayout != null) swipeRefreshLayout.setRefreshing(true);
 
-        apiService.getPosts(category, 50, 0, currentLat, currentLng, 50.0, false).enqueue(new Callback<ApiResponse<PostList>>() {
+        // Fixed: maxDistance should be Integer (50), not Double (50.0)
+        apiService.getPosts(category, 50, 0, currentLat, currentLng, 50, false).enqueue(new Callback<ApiResponse<PostList>>() {
             @Override
             public void onResponse(@NonNull Call<ApiResponse<PostList>> call, @NonNull Response<ApiResponse<PostList>> response) {
                 isRefreshing = false;

@@ -3,9 +3,12 @@ package com.example.dropspot;
 import com.google.gson.annotations.SerializedName;
 
 public class Request {
-    @SerializedName("id")
-    public String id;
+    @SerializedName("requestId")
+    public String requestId;
     
+    @SerializedName("id")
+    public String id; // Fallback for some APIs
+
     @SerializedName("postId")
     public String postId;
     
@@ -40,4 +43,8 @@ public class Request {
     public String respondedAt;
 
     public Request() {}
+
+    public String getEffectiveId() {
+        return requestId != null ? requestId : id;
+    }
 }

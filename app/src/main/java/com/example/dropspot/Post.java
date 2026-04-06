@@ -46,11 +46,17 @@ public class Post {
     @SerializedName("createdAt")
     public String createdAt;
 
-    @SerializedName("updatedAt")
-    public String updatedAt;
-
     @SerializedName("images")
     public List<String> images;
+
+    @SerializedName("ownerName")
+    public String ownerName;
+
+    @SerializedName("ownerEmail")
+    public String ownerEmail;
+
+    @SerializedName("ownerPhoto")
+    public String ownerPhoto;
 
     public Post() {}
 }

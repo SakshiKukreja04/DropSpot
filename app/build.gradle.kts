@@ -43,6 +43,9 @@ dependencies {
     implementation("androidx.navigation:navigation-fragment:2.8.8")
     implementation("androidx.navigation:navigation-ui:2.8.8")
 
+    // WorkManager
+    implementation("androidx.work:work-runtime:2.9.1")
+
     // Firebase dependencies
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)

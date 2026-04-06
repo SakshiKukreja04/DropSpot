@@ -15,9 +15,9 @@ import retrofit2.converter.gson.GsonConverterFactory;
 public class ApiClient {
     private static final String TAG = "ApiClient";
     
-    // CHANGE THIS TO YOUR COMPUTER'S IP IF USING PHYSICAL DEVICE
     // IF USING EMULATOR, USE 10.0.2.2
-    private static final String BASE_URL = "http://192.168.29.133:5000/api/"; 
+    // IF USING PHYSICAL DEVICE, USE YOUR COMPUTER'S IP (e.g., 192.168.x.x)
+    private static final String BASE_URL = "http://192.168.29.133:5000/api/";
     private static Retrofit retrofit = null;
 
     public static Retrofit getClient() {
@@ -34,18 +34,15 @@ public class ApiClient {
                         String token = null;
                         if (user != null) {
                             try {
-                                // Force refresh to get a fresh token
-                                GetTokenResult result = Tasks.await(user.getIdToken(true), 30, TimeUnit.SECONDS);
+                                // Get a fresh token (refreshes if expired)
+                                GetTokenResult result = Tasks.await(user.getIdToken(true), 10, TimeUnit.SECONDS);
                                 token = result.getToken();
                                 if (token != null) {
-                                    // PRINT THIS TOKEN TO LOGCAT FOR POSTMAN
-                                    Log.d("FIREBASE_TOKEN", "Token: " + token);
+                                    Log.d(TAG, "Firebase Token attached to request");
                                 }
                             } catch (Exception e) {
-                                Log.e(TAG, "CRITICAL: Failed to get Firebase Token: " + e.getMessage());
+                                Log.e(TAG, "Error getting Firebase Token: " + e.getMessage());
                             }
-                        } else {
-                            Log.w(TAG, "No user is logged in to Firebase.");
                         }
 
                         Request.Builder requestBuilder = original.newBuilder()
@@ -57,8 +54,8 @@ public class ApiClient {
 
                         return chain.proceed(requestBuilder.build());
                     })
-                    .connectTimeout(30, TimeUnit.SECONDS)
-                    .readTimeout(30, TimeUnit.SECONDS)
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(15, TimeUnit.SECONDS)
                     .build();
 
             retrofit = new Retrofit.Builder()

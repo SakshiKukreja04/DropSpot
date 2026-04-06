@@ -4,9 +4,7 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.view.GestureDetector;
-import android.view.MotionEvent;
-import android.view.View;
+import android.util.Log;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
@@ -20,7 +18,6 @@ import com.google.android.gms.location.LocationServices;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
-import com.google.android.material.snackbar.Snackbar;
 import java.util.ArrayList;
 import java.util.List;
 import retrofit2.Call;
@@ -28,14 +25,15 @@ import retrofit2.Callback;
 import retrofit2.Response;
 
 public class HomeActivity extends AppCompatActivity implements FeedAdapter.OnItemClickListener {
+    private static final String TAG = "HomeActivity";
     private RecyclerView rvHomeFeed;
     private FeedAdapter feedAdapter;
     private List<Post> allPosts = new ArrayList<>();
     private SwipeRefreshLayout swipeRefreshLayout;
-    private GestureDetector swipeDetector;
     private FusedLocationProviderClient fusedLocationClient;
     private ApiService apiService;
-    private double currentLat = 0, currentLng = 0;
+    private double currentLat = 19.0760, currentLng = 72.8777; // Default to Mumbai
+    private boolean isRefreshing = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,43 +43,19 @@ public class HomeActivity extends AppCompatActivity implements FeedAdapter.OnIte
         apiService = ApiClient.getClient().create(ApiService.class);
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
 
+        rvHomeFeed = findViewById(R.id.rvHomeFeed);
+        swipeRefreshLayout = findViewById(R.id.swipeRefresh);
         FloatingActionButton fabPostItem = findViewById(R.id.fabPost);
         BottomNavigationView bottomNavigation = findViewById(R.id.bottomNavigation);
         ChipGroup categoryChips = findViewById(R.id.category_chips);
-        rvHomeFeed = findViewById(R.id.rvHomeFeed);
-        swipeRefreshLayout = findViewById(R.id.swipeRefresh);
 
         setupRecyclerView();
-        requestLocationAndLoadPosts();
 
         if (swipeRefreshLayout != null) {
             swipeRefreshLayout.setOnRefreshListener(this::requestLocationAndLoadPosts);
         }
 
-        // Gesture detector for swipe actions (optional feature)
-        swipeDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
-            @Override
-            public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-                if (e1 == null || e2 == null) return false;
-                if (Math.abs(e1.getY() - e2.getY()) > 250) return false;
-                if (e1.getX() - e2.getX() > 120 && Math.abs(velocityX) > 200) {
-                    Snackbar.make(rvHomeFeed, "Swiped Left", Snackbar.LENGTH_SHORT).show();
-                    return true;
-                } else if (e2.getX() - e1.getX() > 120 && Math.abs(velocityX) > 200) {
-                    Snackbar.make(rvHomeFeed, "Swiped Right", Snackbar.LENGTH_SHORT).show();
-                    return true;
-                }
-                return false;
-            }
-        });
-
-        rvHomeFeed.setOnTouchListener((v, event) -> {
-            swipeDetector.onTouchEvent(event);
-            if (event.getAction() == MotionEvent.ACTION_UP) {
-                v.performClick();
-            }
-            return false;
-        });
+        requestLocationAndLoadPosts();
 
         if (fabPostItem != null) {
             fabPostItem.setOnClickListener(v -> startActivity(new Intent(HomeActivity.this, PostItemActivity.class)));
@@ -91,17 +65,16 @@ public class HomeActivity extends AppCompatActivity implements FeedAdapter.OnIte
             bottomNavigation.setSelectedItemId(R.id.nav_home);
             bottomNavigation.setOnItemSelectedListener(item -> {
                 int itemId = item.getItemId();
-                if (itemId == R.id.nav_home) return true;
-                if (itemId == R.id.nav_saved) {
-                    startActivity(new Intent(this, PostedItemsActivity.class));
-                    return true;
-                }
-                if (itemId == R.id.nav_announcements) {
-                    startActivity(new Intent(this, AnnouncementsActivity.class));
-                    return true;
-                }
-                if (itemId == R.id.nav_profile) {
-                    startActivity(new Intent(this, ProfileActivity.class));
+                if (itemId == R.id.nav_home) return true; // Already here
+                
+                Intent intent = null;
+                if (itemId == R.id.nav_saved) intent = new Intent(this, PostedItemsActivity.class);
+                else if (itemId == R.id.nav_announcements) intent = new Intent(this, AnnouncementsActivity.class);
+                else if (itemId == R.id.nav_profile) intent = new Intent(this, ProfileActivity.class);
+                
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                    startActivity(intent);
                     return true;
                 }
                 return false;
@@ -111,29 +84,25 @@ public class HomeActivity extends AppCompatActivity implements FeedAdapter.OnIte
         if (categoryChips != null) {
             categoryChips.setOnCheckedStateChangeListener((group, checkedIds) -> {
                 int checkedId = checkedIds.isEmpty() ? -1 : checkedIds.get(0);
-                if (checkedId == R.id.chip_all || checkedId == -1) {
-                    loadPosts(null);
-                } else if (checkedId == R.id.chip_electronics) {
-                    loadPosts("Electronics");
-                } else if (checkedId == R.id.chip_furniture) {
-                    loadPosts("Furniture");
-                } else if (checkedId == R.id.chip_clothing) {
-                    loadPosts("Clothing");
-                }
+                String category = null;
+                if (checkedId == R.id.chip_electronics) category = "Electronics";
+                else if (checkedId == R.id.chip_furniture) category = "Furniture";
+                else if (checkedId == R.id.chip_clothing) category = "Clothing";
+                loadPosts(category);
             });
         }
     }
 
     private void setupRecyclerView() {
         rvHomeFeed.setLayoutManager(new LinearLayoutManager(this));
-        feedAdapter = new FeedAdapter(new ArrayList<>(), this);
+        feedAdapter = new FeedAdapter(allPosts, this);
         rvHomeFeed.setAdapter(feedAdapter);
     }
 
     private void requestLocationAndLoadPosts() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 101);
-            loadPosts(null); // Load without location if permission not granted yet
+            loadPosts(null); 
             return;
         }
 
@@ -147,71 +116,57 @@ public class HomeActivity extends AppCompatActivity implements FeedAdapter.OnIte
     }
 
     private void loadPosts(String category) {
+        if (isRefreshing) return;
+        isRefreshing = true;
         if (swipeRefreshLayout != null) swipeRefreshLayout.setRefreshing(true);
 
-        apiService.getPosts(category, 50, 0, currentLat, currentLng, 3.0, false).enqueue(new Callback<ApiResponse<PostList>>() {
+        apiService.getPosts(category, 50, 0, currentLat, currentLng, 50.0, false).enqueue(new Callback<ApiResponse<PostList>>() {
             @Override
             public void onResponse(@NonNull Call<ApiResponse<PostList>> call, @NonNull Response<ApiResponse<PostList>> response) {
+                isRefreshing = false;
                 if (swipeRefreshLayout != null) swipeRefreshLayout.setRefreshing(false);
-                if (response.isSuccessful() && response.body() != null) {
-                    allPosts = response.body().getData().getPosts();
-                    updateAdapter(allPosts);
+                
+                if (response.isSuccessful() && response.body() != null && response.body().getData() != null) {
+                    allPosts.clear();
+                    List<Post> fetchedPosts = response.body().getData().getPosts();
+                    if (fetchedPosts != null) allPosts.addAll(fetchedPosts);
+                    feedAdapter.notifyDataSetChanged();
                 } else {
-                    Toast.makeText(HomeActivity.this, "Failed to load posts", Toast.LENGTH_SHORT).show();
+                    Log.e(TAG, "Load failed: " + response.code());
                 }
             }
 
             @Override
             public void onFailure(@NonNull Call<ApiResponse<PostList>> call, @NonNull Throwable t) {
+                isRefreshing = false;
                 if (swipeRefreshLayout != null) swipeRefreshLayout.setRefreshing(false);
-                Toast.makeText(HomeActivity.this, "Network error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+                Log.e(TAG, "Network failure: " + t.getMessage());
             }
         });
     }
 
-    private void updateAdapter(List<Post> posts) {
-        feedAdapter = new FeedAdapter(posts, this);
-        rvHomeFeed.setAdapter(feedAdapter);
-    }
-
-    @Override
-    public void onItemClick(Post item) {
+    @Override public void onItemClick(Post item) {
         Intent intent = new Intent(this, ItemDetailActivity.class);
         intent.putExtra("POST_ID", item.id);
         startActivity(intent);
     }
 
-    @Override
-    public void onItemLongClick(Post item) {
-        feedAdapter.showDeleteButton(item);
-        Toast.makeText(this, "Delete option shown for: " + item.title, Toast.LENGTH_SHORT).show();
-    }
+    @Override public void onItemLongClick(Post item) { feedAdapter.showDeleteButton(item); }
 
-    @Override
-    public void onDeleteClick(Post item) {
+    @Override public void onDeleteClick(Post item) {
         new AlertDialog.Builder(this)
                 .setTitle("Delete Post")
-                .setMessage("Are you sure you want to delete this post?")
-                .setPositiveButton("Delete", (dialog, which) -> {
+                .setMessage("Delete this post?")
+                .setPositiveButton("Delete", (dialog, id) -> {
                     apiService.deletePost(item.id).enqueue(new Callback<ApiResponse<Void>>() {
-                        @Override
-                        public void onResponse(@NonNull Call<ApiResponse<Void>> call, @NonNull Response<ApiResponse<Void>> response) {
-                            if (response.isSuccessful()) {
+                        @Override public void onResponse(@NonNull Call<ApiResponse<Void>> call, @NonNull Response<ApiResponse<Void>> r) {
+                            if (r.isSuccessful()) {
                                 allPosts.remove(item);
-                                feedAdapter.removeItem(item);
-                                Toast.makeText(HomeActivity.this, "Post deleted successfully", Toast.LENGTH_SHORT).show();
-                            } else {
-                                Toast.makeText(HomeActivity.this, "Failed to delete post", Toast.LENGTH_SHORT).show();
+                                feedAdapter.notifyDataSetChanged();
                             }
                         }
-
-                        @Override
-                        public void onFailure(@NonNull Call<ApiResponse<Void>> call, @NonNull Throwable t) {
-                            Toast.makeText(HomeActivity.this, "Error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
-                        }
+                        @Override public void onFailure(@NonNull Call<ApiResponse<Void>> call, @NonNull Throwable t) {}
                     });
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+                }).setNegativeButton("Cancel", null).show();
     }
 }

@@ -2,100 +2,83 @@ package com.example.dropspot;
 
 import android.content.Intent;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.widget.Toolbar;
 import androidx.fragment.app.Fragment;
 
-import com.google.android.material.bottomnavigation.BottomNavigationView;
+import com.bumptech.glide.Glide;
+import com.google.firebase.auth.FirebaseAuth;
 
 public class ProfileFragment extends Fragment {
 
-    private static final String TAG = "ProfileFragment";
-    private static final String ARG_FULL_NAME = "USER_FULL_NAME";
-    private static final String ARG_EMAIL = "USER_EMAIL";
-
-    private String fullName;
-    private String email;
+    private SessionManager sessionManager;
 
     public static ProfileFragment newInstance(String fullName, String email) {
         ProfileFragment fragment = new ProfileFragment();
         Bundle args = new Bundle();
-        args.putString(ARG_FULL_NAME, fullName);
-        args.putString(ARG_EMAIL, email);
+        args.putString("USER_FULL_NAME", fullName);
+        args.putString("USER_EMAIL", email);
         fragment.setArguments(args);
         return fragment;
-    }
-
-    @Override
-    public void onCreate(@Nullable Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        if (getArguments() != null) {
-            fullName = getArguments().getString(ARG_FULL_NAME);
-            email = getArguments().getString(ARG_EMAIL);
-        }
     }
 
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
+        // Fixed: Use activity_profile layout as fragment_profile does not exist
         View view = inflater.inflate(R.layout.activity_profile, container, false);
 
-        Toolbar toolbar = view.findViewById(R.id.profile_toolbar);
-        TextView tvFullName = view.findViewById(R.id.tvProfileName);
+        sessionManager = new SessionManager(requireContext());
+
+        // Fixed: Updated IDs to match activity_profile.xml
+        ImageView ivProfile = view.findViewById(R.id.ivProfileImage);
+        TextView tvName = view.findViewById(R.id.tvProfileName);
         TextView tvEmail = view.findViewById(R.id.tvProfileEmail);
-        Button btnLogout = view.findViewById(R.id.btnLogout);
         Button btnEditProfile = view.findViewById(R.id.btnEditProfile);
         Button btnViewMyPosts = view.findViewById(R.id.btnViewMyPosts);
+        Button btnLogout = view.findViewById(R.id.btnLogout);
 
-        if (toolbar != null) {
-            toolbar.setNavigationOnClickListener(v -> {
-                if (getActivity() instanceof MainActivity) {
-                    BottomNavigationView nav = getActivity().findViewById(R.id.bottom_navigation);
-                    if (nav != null) {
-                        nav.setSelectedItemId(R.id.nav_home);
-                    }
-                }
-            });
-        }
+        // Populate data from SessionManager
+        String name = sessionManager.getUserName();
+        String email = sessionManager.getUserEmail();
+        // Fixed: Use getUserPhotoUrl() instead of getUserPhoto()
+        String photoUrl = sessionManager.getUserPhotoUrl();
 
-        if (tvFullName != null) {
-            tvFullName.setText(fullName);
-        }
-        if (tvEmail != null) {
-            tvEmail.setText(email);
-        }
+        tvName.setText(name != null ? name : "User Name");
+        tvEmail.setText(email != null ? email : "user@example.com");
 
-        if (btnLogout != null) {
-            btnLogout.setOnClickListener(v -> {
-                Toast.makeText(getContext(), "Logged Out", Toast.LENGTH_SHORT).show();
-                Log.d(TAG, "Logout clicked, redirecting to LoginActivity");
-                Intent logoutIntent = new Intent(getActivity(), LoginActivity.class);
-                logoutIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                startActivity(logoutIntent);
-                getActivity().finish();
-            });
+        if (photoUrl != null && !photoUrl.isEmpty()) {
+            Glide.with(this).load(photoUrl).circleCrop().into(ivProfile);
         }
 
         if (btnEditProfile != null) {
-            btnEditProfile.setOnClickListener(v -> {
-                Toast.makeText(getContext(), "Edit Profile Clicked", Toast.LENGTH_SHORT).show();
-            });
+            btnEditProfile.setOnClickListener(v -> Toast.makeText(getContext(), "Edit Profile Clicked", Toast.LENGTH_SHORT).show());
         }
 
         if (btnViewMyPosts != null) {
             btnViewMyPosts.setOnClickListener(v -> {
-                if (getActivity() instanceof MainActivity) {
-                    ((MainActivity) getActivity()).navigateToSavedFragment();
-                }
+                Intent intent = new Intent(getActivity(), PostedItemsActivity.class);
+                startActivity(intent);
+            });
+        }
+
+        if (btnLogout != null) {
+            btnLogout.setOnClickListener(v -> {
+                FirebaseAuth.getInstance().signOut();
+                // Fixed: Use logout() instead of clearSession()
+                sessionManager.logout();
+                Toast.makeText(getContext(), "Logged Out", Toast.LENGTH_SHORT).show();
+                Intent intent = new Intent(getActivity(), LoginActivity.class);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                startActivity(intent);
             });
         }
 

@@ -14,11 +14,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "486302551837-gh3l60la4a276qkq7u30vdr3asvt736r.apps.googleusercontent.com",
+          "client_id": "486302551837-rv4tjmhvgk1tj54ni97k11qmspirt1r0.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.example.dropspot",
-            "certificate_hash": "96f7aa7b74af70c7240ee93c3507a75f3c6de5d4"
+            "certificate_hash": "31d6922832c49f71e84f80c5ab4db9d23f0f7371"
           }
         },
         {

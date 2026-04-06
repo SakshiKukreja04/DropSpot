@@ -51,14 +51,6 @@ public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder
         notifyDataSetChanged();
     }
 
-    public void removeItem(Post item) {
-        int position = posts.indexOf(item);
-        if (position != -1) {
-            posts.remove(position);
-            notifyItemRemoved(position);
-        }
-    }
-
     static class FeedViewHolder extends RecyclerView.ViewHolder {
         TextView title, category, distance;
         ImageView image;
@@ -76,7 +68,11 @@ public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder
         public void bind(final Post item, final OnItemClickListener listener, boolean showDelete) {
             title.setText(item.title);
             category.setText(item.category);
-            distance.setText(String.format("%.1f km away", item.distance));
+            
+            // Show Price and Distance: "₹500 • 1.2 km away"
+            String priceText = String.format("₹%.0f", item.price);
+            String distanceText = String.format("%.1f km away", item.distance);
+            distance.setText(priceText + " • " + distanceText);
             
             if (item.images != null && !item.images.isEmpty()) {
                 Glide.with(itemView.getContext())

@@ -41,7 +41,7 @@ public interface ApiService {
     Call<ApiResponse<Object>> createRequest(@Body RequestBody request);
 
     @GET("requests")
-    Call<ApiResponse<List<Object>>> getRequests(@Query("type") String type);
+    Call<ApiResponse<List<Request>>> getRequests(@Query("type") String type);
 
     @PUT("requests/{id}/status")
     Call<ApiResponse<Object>> updateRequestStatus(@Path("id") String requestId, @Body StatusUpdate status);

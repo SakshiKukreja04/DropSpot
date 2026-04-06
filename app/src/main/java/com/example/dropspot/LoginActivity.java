@@ -40,7 +40,7 @@ public class LoginActivity extends AppCompatActivity {
         sessionManager = new SessionManager(this);
 
         if (sessionManager.isLoggedIn()) {
-            startActivity(new Intent(LoginActivity.this, HomeActivity.class));
+            startActivity(new Intent(LoginActivity.this, MainActivity.class));
             finish();
             return;
         }
@@ -119,19 +119,9 @@ public class LoginActivity extends AppCompatActivity {
                             String photoUrl = photoUri != null ? photoUri.toString() : null;
                             
                             sessionManager.saveUser(name, email, photoUrl);
-
-                            // Retrieve Firebase ID Token for backend testing
-                            user.getIdToken(true).addOnCompleteListener(tokenTask -> {
-                                if (tokenTask.isSuccessful()) {
-                                    String firebaseToken = tokenTask.getResult().getToken();
-                                    Log.d("FIREBASE_TOKEN", firebaseToken);
-                                } else {
-                                    Log.e("TOKEN_ERROR", "Token not generated", tokenTask.getException());
-                                }
-                            });
                             
                             Toast.makeText(LoginActivity.this, "Welcome " + name, Toast.LENGTH_SHORT).show();
-                            startActivity(new Intent(LoginActivity.this, HomeActivity.class));
+                            startActivity(new Intent(LoginActivity.this, MainActivity.class));
                             finish();
                         }
                     } else {

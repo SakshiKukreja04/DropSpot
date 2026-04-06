@@ -13,5 +13,28 @@
 .externalNativeBuild
 .cxx
 local.properties
-google-service.json
 
+# Firebase configuration (never commit)
+**/google-services.json
+
+# Local environment variables
+.env
+.env.local
+.env.*.local
+
+# Android build specific
+.gradle/
+build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aar
+*.jks
+*.keystore
+
+# User-specific
+.idea/
+*.iml
+.DS_Store

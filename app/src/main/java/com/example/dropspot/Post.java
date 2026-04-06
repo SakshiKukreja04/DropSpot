@@ -22,6 +22,9 @@ public class Post {
     @SerializedName("condition")
     public String condition;
     
+    @SerializedName("price")
+    public double price;
+    
     @SerializedName("latitude")
     public double latitude;
     
@@ -42,6 +45,9 @@ public class Post {
     
     @SerializedName("createdAt")
     public String createdAt;
+
+    @SerializedName("updatedAt")
+    public String updatedAt;
 
     @SerializedName("images")
     public List<String> images;

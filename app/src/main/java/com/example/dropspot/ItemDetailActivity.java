@@ -2,32 +2,39 @@ package com.example.dropspot;
 
 import android.os.Bundle;
 import android.util.Log;
-import android.view.GestureDetector;
-import android.view.MotionEvent;
-import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.Glide;
 import com.google.android.material.snackbar.Snackbar;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import java.util.ArrayList;
+import java.util.List;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 
-public class ItemDetailActivity extends AppCompatActivity {
+public class ItemDetailActivity extends AppCompatActivity implements RequestAdapter.OnRequestActionListener {
     private static final String TAG = "ItemDetailActivity";
-    private GestureDetector gestureDetector;
-    private ScaleGestureDetector scaleGestureDetector;
-    private float scaleFactor = 1.0f;
     private ImageView ivItemImage;
-    private TextView tvTitle, tvCategory, tvDescription, tvDistance;
+    private TextView tvTitle, tvCategory, tvDescription, tvDistance, tvPrice;
     private ApiService apiService;
     private String postId;
+    private Post currentPost;
+    private Button btnRequestItem;
+    private RecyclerView rvRequests;
+    private RequestAdapter requestAdapter;
+    private List<Request> requestList = new ArrayList<>();
+    private LinearLayout requestsSection;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,19 +57,27 @@ public class ItemDetailActivity extends AppCompatActivity {
         tvDescription = findViewById(R.id.tv_description_detail);
         tvDistance = findViewById(R.id.tv_distance_detail);
         ivItemImage = findViewById(R.id.iv_item_image_detail);
-        Button btnRequestItem = findViewById(R.id.btn_request_item);
+        btnRequestItem = findViewById(R.id.btn_request_item);
+        requestsSection = findViewById(R.id.requests_section);
+        
+        setupRequestsRecyclerView();
 
         if (postId != null) {
             loadPostDetails();
         }
 
         if (btnRequestItem != null) {
-            btnRequestItem.setOnClickListener(v -> {
-                sendRequest();
-            });
+            btnRequestItem.setOnClickListener(v -> sendRequest());
         }
+    }
 
-        setupGestures();
+    private void setupRequestsRecyclerView() {
+        rvRequests = findViewById(R.id.rv_requests);
+        if (rvRequests != null) {
+            rvRequests.setLayoutManager(new LinearLayoutManager(this));
+            requestAdapter = new RequestAdapter(requestList, this);
+            rvRequests.setAdapter(requestAdapter);
+        }
     }
 
     private void loadPostDetails() {
@@ -70,10 +85,16 @@ public class ItemDetailActivity extends AppCompatActivity {
             @Override
             public void onResponse(@NonNull Call<ApiResponse<Post>> call, @NonNull Response<ApiResponse<Post>> response) {
                 if (response.isSuccessful() && response.body() != null) {
-                    Post post = response.body().getData();
-                    displayPost(post);
+                    currentPost = response.body().getData();
+                    if (currentPost != null) {
+                        displayPost(currentPost);
+                        checkOwnershipAndLoadRequests();
+                        checkIfAlreadyRequested();
+                    } else {
+                        Toast.makeText(ItemDetailActivity.this, "Post not found", Toast.LENGTH_SHORT).show();
+                    }
                 } else {
-                    Toast.makeText(ItemDetailActivity.this, "Failed to load item details", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(ItemDetailActivity.this, "Failed to load details", Toast.LENGTH_SHORT).show();
                 }
             }
 
@@ -85,70 +106,152 @@ public class ItemDetailActivity extends AppCompatActivity {
     }
 
     private void displayPost(Post post) {
-        if (tvTitle != null) tvTitle.setText(post.title);
-        if (tvCategory != null) tvCategory.setText(post.category);
-        if (tvDescription != null) tvDescription.setText(post.description);
-        if (tvDistance != null) tvDistance.setText(String.format("%.1f km", post.distance));
+        tvTitle.setText(post.title != null ? post.title : "No Title");
+        tvCategory.setText(post.category != null ? post.category : "No Category");
+        tvDescription.setText(post.description != null ? post.description : "No Description");
+        
+        // Show distance if available, otherwise show price or something else
+        if (post.distance > 0) {
+            tvDistance.setText(String.format("%.1f km away", post.distance));
+        } else {
+            tvDistance.setText(String.format("$%.2f", post.price));
+        }
         
         if (post.images != null && !post.images.isEmpty()) {
             Glide.with(this)
                 .load(post.images.get(0))
                 .placeholder(R.drawable.ic_launcher_background)
+                .error(R.drawable.ic_launcher_background)
                 .into(ivItemImage);
+        } else {
+            ivItemImage.setImageResource(R.drawable.ic_launcher_background);
         }
     }
 
-    private void sendRequest() {
-        ApiService.RequestBody requestBody = new ApiService.RequestBody(postId, "I am interested in this item!");
-        apiService.createRequest(requestBody).enqueue(new Callback<ApiResponse<Object>>() {
+    private void checkOwnershipAndLoadRequests() {
+        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
+        if (currentUser == null || currentPost == null) return;
+
+        if (currentUser.getUid().equals(currentPost.userId)) {
+            // I am the owner
+            btnRequestItem.setVisibility(View.GONE);
+            if (requestsSection != null) {
+                requestsSection.setVisibility(View.VISIBLE);
+            }
+            loadRequestsForPost();
+        } else {
+            // I am a viewer
+            btnRequestItem.setVisibility(View.VISIBLE);
+            if (requestsSection != null) {
+                requestsSection.setVisibility(View.GONE);
+            }
+        }
+    }
+
+    private void checkIfAlreadyRequested() {
+        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
+        if (currentUser == null || currentPost == null || currentUser.getUid().equals(currentPost.userId)) return;
+
+        apiService.getRequests("my_sent").enqueue(new Callback<ApiResponse<List<Request>>>() {
             @Override
-            public void onResponse(@NonNull Call<ApiResponse<Object>> call, @NonNull Response<ApiResponse<Object>> response) {
+            public void onResponse(Call<ApiResponse<List<Request>>> call, Response<ApiResponse<List<Request>>> response) {
+                if (response.isSuccessful() && response.body() != null) {
+                    List<Request> sentRequests = response.body().getData();
+                    if (sentRequests != null) {
+                        for (Request r : sentRequests) {
+                            if (r.postId.equals(postId)) {
+                                btnRequestItem.setEnabled(false);
+                                btnRequestItem.setText("Already Requested");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            @Override
+            public void onFailure(Call<ApiResponse<List<Request>>> call, Throwable t) {
+                Log.e(TAG, "Error checking sent requests", t);
+            }
+        });
+    }
+
+    private void loadRequestsForPost() {
+        apiService.getRequests("my_received").enqueue(new Callback<ApiResponse<List<Request>>>() {
+            @Override
+            public void onResponse(Call<ApiResponse<List<Request>>> call, Response<ApiResponse<List<Request>>> response) {
+                if (response.isSuccessful() && response.body() != null) {
+                    List<Request> allRequests = response.body().getData();
+                    requestList.clear();
+                    if (allRequests != null) {
+                        for (Request r : allRequests) {
+                            if (r.postId.equals(postId)) {
+                                requestList.add(r);
+                            }
+                        }
+                    }
+                    if (requestAdapter != null) {
+                        requestAdapter.notifyDataSetChanged();
+                    }
+                }
+            }
+
+            @Override
+            public void onFailure(Call<ApiResponse<List<Request>>> call, Throwable t) {
+                Log.e(TAG, "Error loading requests", t);
+            }
+        });
+    }
+
+    private void sendRequest() {
+        btnRequestItem.setEnabled(false);
+        ApiService.RequestBody body = new ApiService.RequestBody(postId, "I am interested in this item!");
+        apiService.createRequest(body).enqueue(new Callback<ApiResponse<Object>>() {
+            @Override
+            public void onResponse(Call<ApiResponse<Object>> call, Response<ApiResponse<Object>> response) {
                 if (response.isSuccessful()) {
-                    Snackbar.make(ivItemImage, "Request Sent Successfully", Snackbar.LENGTH_LONG).show();
+                    Snackbar.make(btnRequestItem, "Request sent!", Snackbar.LENGTH_SHORT).show();
+                    btnRequestItem.setText("Request Sent");
                 } else {
+                    btnRequestItem.setEnabled(true);
                     Toast.makeText(ItemDetailActivity.this, "Failed to send request", Toast.LENGTH_SHORT).show();
                 }
             }
 
             @Override
-            public void onFailure(@NonNull Call<ApiResponse<Object>> call, @NonNull Throwable t) {
+            public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
+                btnRequestItem.setEnabled(true);
                 Toast.makeText(ItemDetailActivity.this, "Network error", Toast.LENGTH_SHORT).show();
             }
         });
     }
 
-    private void setupGestures() {
-        gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
-            @Override
-            public boolean onDoubleTap(MotionEvent e) {
-                Toast.makeText(ItemDetailActivity.this, "Item Saved", Toast.LENGTH_SHORT).show();
-                return true;
-            }
-        });
-
-        scaleGestureDetector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            @Override
-            public boolean onScale(ScaleGestureDetector detector) {
-                scaleFactor *= detector.getScaleFactor();
-                scaleFactor = Math.max(0.1f, Math.min(scaleFactor, 10.0f));
-                ivItemImage.setScaleX(scaleFactor);
-                ivItemImage.setScaleY(scaleFactor);
-                return true;
-            }
-        });
-
-        if (ivItemImage != null) {
-            ivItemImage.setOnTouchListener((v, event) -> {
-                gestureDetector.onTouchEvent(event);
-                scaleGestureDetector.onTouchEvent(event);
-                return true;
-            });
-        }
+    @Override
+    public void onAccept(Request request) {
+        updateStatus(request.id, "accepted");
     }
 
     @Override
-    public boolean onSupportNavigateUp() {
-        onBackPressed();
-        return true;
+    public void onReject(Request request) {
+        updateStatus(request.id, "rejected");
+    }
+
+    private void updateStatus(String requestId, String status) {
+        apiService.updateRequestStatus(requestId, new ApiService.StatusUpdate(status)).enqueue(new Callback<ApiResponse<Object>>() {
+            @Override
+            public void onResponse(Call<ApiResponse<Object>> call, Response<ApiResponse<Object>> response) {
+                if (response.isSuccessful()) {
+                    Toast.makeText(ItemDetailActivity.this, "Status updated to " + status, Toast.LENGTH_SHORT).show();
+                    loadRequestsForPost(); // Refresh list
+                } else {
+                    Toast.makeText(ItemDetailActivity.this, "Failed to update status", Toast.LENGTH_SHORT).show();
+                }
+            }
+
+            @Override
+            public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
+                Toast.makeText(ItemDetailActivity.this, "Network error", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 }

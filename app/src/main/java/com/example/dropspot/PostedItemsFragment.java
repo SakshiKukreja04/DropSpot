@@ -13,6 +13,8 @@ import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.firestore.FirebaseFirestore;
 import java.util.ArrayList;
 import java.util.List;
 import retrofit2.Call;
@@ -22,10 +24,11 @@ import retrofit2.Response;
 public class PostedItemsFragment extends Fragment {
     private static final String TAG = "PostedItemsFragment";
     private RecyclerView rvPostedItems;
-    private PostedItemsAdapter postedItemsAdapter;
     private final List<Post> myPosts = new ArrayList<>();
     private SwipeRefreshLayout swipeRefreshLayout;
     private ApiService apiService;
+    private FirebaseFirestore firebaseFirestore;
+    private String currentUserId;
     private TextView tvNoPosts;
 
     @Nullable
@@ -42,6 +45,8 @@ public class PostedItemsFragment extends Fragment {
         if (toolbar != null) toolbar.setVisibility(View.GONE);
 
         apiService = ApiClient.getClient().create(ApiService.class);
+        firebaseFirestore = FirebaseFirestore.getInstance();
+        currentUserId = FirebaseAuth.getInstance().getUid();
 
         rvPostedItems = view.findViewById(R.id.rv_posted_items);
         swipeRefreshLayout = view.findViewById(R.id.swipeRefresh);
@@ -60,8 +65,9 @@ public class PostedItemsFragment extends Fragment {
 
     private void setupRecyclerView() {
         rvPostedItems.setLayoutManager(new LinearLayoutManager(getContext()));
-        postedItemsAdapter = new PostedItemsAdapter(requireContext(), myPosts);
-        rvPostedItems.setAdapter(postedItemsAdapter);
+        // Use UnifiedPostAdapter instead of PostedItemsAdapter (BUG 2 FIX)
+        UnifiedPostAdapter adapter = new UnifiedPostAdapter(requireContext(), myPosts, firebaseFirestore, currentUserId);
+        rvPostedItems.setAdapter(adapter);
     }
 
     private void fetchMyPosts() {
@@ -79,7 +85,7 @@ public class PostedItemsFragment extends Fragment {
                 if (response.isSuccessful() && response.body() != null && response.body().getData() != null) {
                     myPosts.clear();
                     myPosts.addAll(response.body().getData().getPosts());
-                    postedItemsAdapter.notifyDataSetChanged();
+                    rvPostedItems.getAdapter().notifyDataSetChanged();
                     
                     if (myPosts.isEmpty()) {
                         tvNoPosts.setVisibility(View.VISIBLE);

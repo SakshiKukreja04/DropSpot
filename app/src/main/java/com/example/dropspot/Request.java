@@ -30,6 +30,9 @@ public class Request {
     @SerializedName("postTitle")
     public String postTitle;
     
+    @SerializedName("postPrice")
+    public double postPrice;
+    
     @SerializedName("message")
     public String message;
     

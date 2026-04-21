@@ -1,302 +1,199 @@
 import express from 'express';
-import { db } from '../config/firebase.js';
-import { generateId, getCurrentTimestamp, successResponse, errorResponse } from '../utils/helpers.js';
+import { db, FieldValue } from '../config/firebase.js';
+import { generateId, getCurrentTimestamp, successResponse, errorResponse, calculateDistance } from '../utils/helpers.js';
+import admin from '../config/firebase.js';
 
 const router = express.Router();
 
 /**
- * POST /events - Create a new event
+ * Helper to send FCM notification
+ */
+async function sendFCMNotification(token, title, body, data) {
+  if (!token) return;
+
+  const stringData = {};
+  if (data) {
+    Object.keys(data).forEach(key => {
+      stringData[key] = String(data[key]);
+    });
+  }
+
+  const message = {
+    token: token,
+    notification: { title, body },
+    data: stringData,
+    android: {
+      priority: 'high',
+      notification: {
+        channel_id: 'dropspot_notifications',
+        priority: 'high'
+      }
+    }
+  };
+
+  try {
+    await admin.messaging().send(message);
+    console.log(`[FCM] Sent to: ...${token.substring(token.length - 10)}`);
+  } catch (error) {
+    console.error('[FCM] Error:', error.message);
+  }
+}
+
+/**
+ * POST /events - Create a new event and notify nearby users
  */
 router.post('/', async (req, res, next) => {
   try {
-    const { title, description, category, startDate, endDate, location, latitude, longitude, images } = req.body;
+    const { eventName, title: bodyTitle, description, date, startTime, endTime, location, category, latitude, longitude } = req.body;
     const userId = req.user.uid;
 
-    // Validate required fields
-    if (!title || !description || !category || !startDate) {
+    const title = bodyTitle || eventName;
+    if (!title || !description || !startTime) {
       return res.status(400).json(errorResponse('Missing required fields', 'INVALID_INPUT', 400));
     }
 
-    // Create event object
     const eventId = generateId();
+    const timestamp = Date.now();
+
     const event = {
-      id: eventId,
-      userId,
+      eventId,
       title,
+      eventName: title,
       description,
-      category,
-      startDate,
-      endDate: endDate || null,
+      latitude: latitude ? Number(latitude) : null,
+      longitude: longitude ? Number(longitude) : null,
+      ownerId: userId,
+      attendeesCount: 1,
+      attendees: [userId],
+      category: category || 'General',
+      date: date || (startTime.includes(',') ? startTime.split(',')[0].trim() : ''),
+      startTime,
+      endTime: endTime || null,
       location: location || null,
-      latitude: latitude || null,
-      longitude: longitude || null,
-      images: images || [],
-      attendees: [userId], // Creator is first attendee
-      attendeeCount: 1,
-      createdAt: getCurrentTimestamp(),
-      updatedAt: getCurrentTimestamp(),
       isActive: true,
+      createdAt: timestamp,
+      updatedAt: timestamp
     };
 
-    // Save to Firestore
     await db.collection('events').doc(eventId).set(event);
+    console.log(`[EVENT_CREATE] Created: ${title} by ${userId}`);
 
-    // Add to user's events
-    await db.collection('users').doc(userId).collection('events').doc(eventId).set({
-      eventId,
-      createdAt: getCurrentTimestamp(),
-      isCreator: true,
-    });
+    // Notify nearby users
+    if (event.latitude && event.longitude) {
+      const usersSnapshot = await db.collection('users').get();
+      const nearbyPromises = [];
+
+      usersSnapshot.forEach(doc => {
+        const userData = doc.data();
+        const recipientUid = userData.uid || doc.id;
+
+        // Skip owner, but check proximity for others with tokens
+        if (recipientUid !== userId && userData.fcmToken && userData.latitude && userData.longitude) {
+          const distance = calculateDistance(event.latitude, event.longitude, userData.latitude, userData.longitude);
+          if (distance <= 2.5) {
+            nearbyPromises.push(
+              sendFCMNotification(
+                userData.fcmToken,
+                "New Event Nearby 📍",
+                `"${title}" is happening near you!`,
+                {
+                  type: "event_created",
+                  eventId: eventId
+                }
+              )
+            );
+          }
+        }
+      });
+      if (nearbyPromises.length > 0) Promise.all(nearbyPromises).catch(e => console.error(e));
+    }
 
     res.status(201).json(successResponse(event, 'Event created successfully'));
-  } catch (error) {
-    console.error('Error creating event:', error);
-    next(error);
-  }
+  } catch (error) { next(error); }
 });
 
 /**
- * GET /events - Get all events with optional filters
+ * GET /events/upcoming - Get upcoming events
+ */
+router.get('/upcoming', async (req, res, next) => {
+  try {
+    const snapshot = await db.collection('events')
+      .where('isActive', '==', true)
+      .limit(50)
+      .get();
+
+    let events = [];
+    snapshot.forEach(doc => events.push(doc.data()));
+
+    // Sort manually to avoid index requirement
+    events.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    res.status(200).json(successResponse(events, 'Upcoming events fetched'));
+  } catch (error) { next(error); }
+});
+
+/**
+ * POST /events/attend - Attend an event
+ */
+router.post('/attend', async (req, res, next) => {
+  try {
+    const { eventId, userId: bodyUserId } = req.body;
+    const userId = bodyUserId || req.user.uid;
+
+    const eventRef = db.collection('events').doc(eventId);
+    const eventDoc = await eventRef.get();
+    if (!eventDoc.exists) return res.status(404).json(errorResponse('Event not found'));
+
+    const event = eventDoc.data();
+    if (event.attendees && event.attendees.includes(userId)) {
+        return res.status(400).json(errorResponse('Already attending'));
+    }
+
+    await eventRef.update({
+      attendees: FieldValue.arrayUnion(userId),
+      attendeesCount: FieldValue.increment(1),
+      updatedAt: Date.now()
+    });
+
+    // Notify owner
+    const ownerDoc = await db.collection('users').doc(event.ownerId).get();
+    if (ownerDoc.exists && ownerDoc.data().fcmToken && event.ownerId !== userId) {
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userName = userDoc.exists ? (userDoc.data().name || userDoc.data().displayName) : 'Someone';
+
+        await sendFCMNotification(
+            ownerDoc.data().fcmToken,
+            "New Attendee! 🎉",
+            `${userName} joined your event: ${event.title}`,
+            {
+                type: "event_attend",
+                eventId: eventId,
+                recipientUserId: event.ownerId
+            }
+        );
+    }
+
+    res.status(200).json(successResponse(null, 'Joined event successfully'));
+  } catch (error) { next(error); }
+});
+
+/**
+ * GET /events - Get all active events
  */
 router.get('/', async (req, res, next) => {
   try {
-    const { category, userId, limit = 20, offset = 0, upcomingOnly = true } = req.query;
+    const snapshot = await db.collection('events')
+      .where('isActive', '==', true)
+      .get();
 
-    let query = db.collection('events').where('isActive', '==', true);
+    const events = [];
+    snapshot.forEach(doc => events.push(doc.data()));
 
-    // Filter by category if provided
-    if (category) {
-      query = query.where('category', '==', category);
-    }
+    // Sort manually
+    events.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-    // Filter by userId if provided
-    if (userId) {
-      query = query.where('userId', '==', userId);
-    }
-
-    // Get documents
-    let snapshot;
-    if (upcomingOnly === 'true') {
-      const now = new Date().toISOString();
-      snapshot = await query
-        .where('startDate', '>=', now)
-        .orderBy('startDate', 'asc')
-        .limit(parseInt(limit) + parseInt(offset))
-        .get();
-    } else {
-      snapshot = await query.orderBy('startDate', 'desc').limit(parseInt(limit) + parseInt(offset)).get();
-    }
-
-    let events = [];
-    snapshot.forEach((doc) => {
-      events.push(doc.data());
-    });
-
-    // Apply offset
-    events = events.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
-
-    res.status(200).json(successResponse({ events, count: events.length }, 'Events retrieved successfully'));
-  } catch (error) {
-    console.error('Error getting events:', error);
-    next(error);
-  }
-});
-
-/**
- * GET /events/:id - Get event details
- */
-router.get('/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-
-    const doc = await db.collection('events').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Event not found', 'NOT_FOUND', 404));
-    }
-
-    const event = doc.data();
-
-    // Get event creator info
-    const userDoc = await db.collection('users').doc(event.userId).get();
-    const userData = userDoc.exists ? userDoc.data() : null;
-
-    res.status(200).json(
-      successResponse(
-        {
-          ...event,
-          creator: userData
-            ? { uid: event.userId, name: userData.name, email: userData.email, photo: userData.photo }
-            : null,
-        },
-        'Event retrieved successfully'
-      )
-    );
-  } catch (error) {
-    console.error('Error getting event:', error);
-    next(error);
-  }
-});
-
-/**
- * PUT /events/:id - Update event
- */
-router.put('/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.uid;
-    const { title, description, category, startDate, endDate, location, images } = req.body;
-
-    const doc = await db.collection('events').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Event not found', 'NOT_FOUND', 404));
-    }
-
-    const event = doc.data();
-
-    // Check ownership
-    if (event.userId !== userId) {
-      return res.status(403).json(errorResponse('Unauthorized to update this event', 'FORBIDDEN', 403));
-    }
-
-    // Update fields
-    const updateData = {};
-    if (title !== undefined) updateData.title = title;
-    if (description !== undefined) updateData.description = description;
-    if (category !== undefined) updateData.category = category;
-    if (startDate !== undefined) updateData.startDate = startDate;
-    if (endDate !== undefined) updateData.endDate = endDate;
-    if (location !== undefined) updateData.location = location;
-    if (images !== undefined) updateData.images = images;
-    updateData.updatedAt = getCurrentTimestamp();
-
-    await db.collection('events').doc(id).update(updateData);
-
-    const updatedEvent = { ...event, ...updateData };
-
-    res.status(200).json(successResponse(updatedEvent, 'Event updated successfully'));
-  } catch (error) {
-    console.error('Error updating event:', error);
-    next(error);
-  }
-});
-
-/**
- * DELETE /events/:id - Delete event
- */
-router.delete('/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.uid;
-
-    const doc = await db.collection('events').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Event not found', 'NOT_FOUND', 404));
-    }
-
-    const event = doc.data();
-
-    // Check ownership
-    if (event.userId !== userId) {
-      return res.status(403).json(errorResponse('Unauthorized to delete this event', 'FORBIDDEN', 403));
-    }
-
-    // Soft delete
-    await db.collection('events').doc(id).update({
-      isActive: false,
-      updatedAt: getCurrentTimestamp(),
-    });
-
-    // Delete from user's events
-    await db.collection('users').doc(userId).collection('events').doc(id).delete();
-
-    res.status(200).json(successResponse(null, 'Event deleted successfully'));
-  } catch (error) {
-    console.error('Error deleting event:', error);
-    next(error);
-  }
-});
-
-/**
- * POST /events/:id/join - Join event as attendee
- */
-router.post('/:id/join', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.uid;
-
-    const doc = await db.collection('events').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Event not found', 'NOT_FOUND', 404));
-    }
-
-    const event = doc.data();
-
-    // Check if already attendee
-    if (event.attendees && event.attendees.includes(userId)) {
-      return res.status(400).json(errorResponse('Already attending this event', 'ALREADY_ATTENDEE', 400));
-    }
-
-    // Add attendee
-    const newAttendees = [...(event.attendees || []), userId];
-    await db.collection('events').doc(id).update({
-      attendees: newAttendees,
-      attendeeCount: newAttendees.length,
-    });
-
-    // Add event to user's events
-    await db.collection('users').doc(userId).collection('events').doc(id).set({
-      eventId: id,
-      joinedAt: getCurrentTimestamp(),
-      isCreator: false,
-    });
-
-    res.status(200).json(successResponse({ attendeeCount: newAttendees.length }, 'Joined event successfully'));
-  } catch (error) {
-    console.error('Error joining event:', error);
-    next(error);
-  }
-});
-
-/**
- * DELETE /events/:id/leave - Leave event
- */
-router.delete('/:id/leave', async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.uid;
-
-    const doc = await db.collection('events').doc(id).get();
-
-    if (!doc.exists) {
-      return res.status(404).json(errorResponse('Event not found', 'NOT_FOUND', 404));
-    }
-
-    const event = doc.data();
-
-    // Check if event creator (cannot leave own event)
-    if (event.userId === userId) {
-      return res.status(400).json(errorResponse('Event creator cannot leave event', 'INVALID_ACTION', 400));
-    }
-
-    // Remove attendee
-    const newAttendees = (event.attendees || []).filter((id) => id !== userId);
-    await db.collection('events').doc(id).update({
-      attendees: newAttendees,
-      attendeeCount: newAttendees.length,
-    });
-
-    // Remove from user's events
-    await db.collection('users').doc(userId).collection('events').doc(id).delete();
-
-    res.status(200).json(successResponse({ attendeeCount: newAttendees.length }, 'Left event successfully'));
-  } catch (error) {
-    console.error('Error leaving event:', error);
-    next(error);
-  }
+    res.status(200).json(successResponse(events, 'Events retrieved successfully'));
+  } catch (error) { next(error); }
 });
 
 export default router;

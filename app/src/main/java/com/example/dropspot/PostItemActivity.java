@@ -25,7 +25,6 @@ import androidx.core.app.ActivityCompat;
 import com.bumptech.glide.Glide;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
-import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.firebase.auth.FirebaseAuth;
@@ -137,8 +136,6 @@ public class PostItemActivity extends AppCompatActivity {
         if (btnPostItem != null) {
             btnPostItem.setOnClickListener(v -> validateAndSubmit());
         }
-
-        setupBottomNavigation();
     }
 
     private void updateImagePreview() {
@@ -328,20 +325,5 @@ public class PostItemActivity extends AppCompatActivity {
                 Toast.makeText(PostItemActivity.this, "Network Error", Toast.LENGTH_SHORT).show();
             }
         });
-    }
-
-    private void setupBottomNavigation() {
-        BottomNavigationView bottomNavigation = findViewById(R.id.bottomNavigation);
-        if (bottomNavigation != null) {
-            bottomNavigation.setOnItemSelectedListener(item -> {
-                int itemId = item.getItemId();
-                if (itemId == R.id.nav_home) {
-                    startActivity(new Intent(this, HomeActivity.class));
-                    finish();
-                    return true;
-                }
-                return false;
-            });
-        }
     }
 }

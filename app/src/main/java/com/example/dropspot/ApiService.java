@@ -62,9 +62,15 @@ public interface ApiService {
     // Events
     @GET("events")
     Call<ApiResponse<List<Event>>> getEvents();
+    
+    @GET("events/upcoming")
+    Call<ApiResponse<List<Event>>> getUpcomingEvents();
 
     @POST("events")
     Call<ApiResponse<Event>> createEvent(@Body Event event);
+
+    @POST("events/attend")
+    Call<ApiResponse<Object>> attendEvent(@Body AttendRequest request);
 
     @POST("events/{id}/join")
     Call<ApiResponse<Void>> joinEvent(@Path("id") String eventId);
@@ -74,7 +80,7 @@ public interface ApiService {
 
     // Notifications
     @GET("notifications/{userId}")
-    Call<ApiResponse<List<Notification>>> getNotifications(@Path("userId") String userId);
+    Call<ApiResponse<NotificationList>> getNotifications(@Path("userId") String userId);
 
     @GET("notifications/unread-count")
     Call<ApiResponse<Integer>> getUnreadNotificationCount();
@@ -91,7 +97,25 @@ public interface ApiService {
 
     @GET("users/{userId}")
     Call<ApiResponse<Object>> getUserProfile(@Path("userId") String userId);
+
+    @POST("users/{userId}/process-pending-notifications")
+    Call<ApiResponse<Object>> processPendingNotifications(@Path("userId") String userId);
+
+    // Payments
+    @POST("payments")
+    Call<ApiResponse<Object>> savePayment(@Body PaymentRequest payment);
     
+    // Dispatch & Delivery
+    @POST("dispatch/mark-dispatched")
+    Call<ApiResponse<Object>> markOrderDispatched(@Body DispatchRequest request);
+    
+    @POST("dispatch/mark-delivered")
+    Call<ApiResponse<Object>> markOrderDelivered(@Body DeliveryRequest request);
+    
+    // FCM Notifications
+    @POST("notifications/send-fcm")
+    Call<ApiResponse<Object>> sendFcmNotification(@Body Object fcmPayload);
+
     // Wrapper Classes
     class RequestBody {
         public String postId;
@@ -113,16 +137,66 @@ public interface ApiService {
         public SavedPostRequest(String postId) { this.postId = postId; }
     }
 
-    class Event {
-        public String id;
-        public String title;
-        public String description;
-        public String category;
-        public String location;
-        public String startTime;
-        public String endTime;
-        public String creatorId;
-        public List<String> participants;
+    class AttendRequest {
+        public String eventId;
+        public String userId;
+        public AttendRequest(String eventId, String userId) {
+            this.eventId = eventId;
+            this.userId = userId;
+        }
+    }
+
+    class PaymentRequest {
+        public String paymentId;
+        public String postId;
+        public String requesterId;
+        public String ownerId;
+        public double amount;
+        public String status;
+
+        public PaymentRequest(String paymentId, String postId, String requesterId, String ownerId, double amount, String status) {
+            this.paymentId = paymentId;
+            this.postId = postId;
+            this.requesterId = requesterId;
+            this.ownerId = ownerId;
+            this.amount = amount;
+            this.status = status;
+        }
+    }
+
+    class DispatchRequest {
+        public String paymentId;
+        public String buyerId;
+        public String sellerId;
+        public String itemTitle;
+        public String trackingNumber;
+
+        public DispatchRequest(String paymentId, String buyerId, String sellerId, String itemTitle, String trackingNumber) {
+            this.paymentId = paymentId;
+            this.buyerId = buyerId;
+            this.sellerId = sellerId;
+            this.itemTitle = itemTitle;
+            this.trackingNumber = trackingNumber;
+        }
+    }
+
+    class DeliveryRequest {
+        public String paymentId;
+        public String buyerId;
+        public String sellerId;
+        public String itemTitle;
+
+        public DeliveryRequest(String paymentId, String buyerId, String sellerId, String itemTitle) {
+            this.paymentId = paymentId;
+            this.buyerId = buyerId;
+            this.sellerId = sellerId;
+            this.itemTitle = itemTitle;
+        }
+    }
+
+    class NotificationList {
+        public List<Notification> notifications;
+        public int count;
     }
 
     class Notification {

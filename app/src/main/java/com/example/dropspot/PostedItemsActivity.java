@@ -11,6 +11,8 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.firestore.FirebaseFirestore;
 import java.util.ArrayList;
 import java.util.List;
 import retrofit2.Call;
@@ -20,10 +22,11 @@ import retrofit2.Response;
 public class PostedItemsActivity extends AppCompatActivity {
     private static final String TAG = "PostedItemsActivity";
     private RecyclerView rvPostedItems;
-    private PostedItemsAdapter postedItemsAdapter;
     private List<Post> myPosts = new ArrayList<>();
     private SwipeRefreshLayout swipeRefreshLayout;
     private ApiService apiService;
+    private FirebaseFirestore firebaseFirestore;
+    private String currentUserId;
     private TextView tvNoPosts;
 
     @Override
@@ -32,6 +35,8 @@ public class PostedItemsActivity extends AppCompatActivity {
         setContentView(R.layout.activity_posted_items);
 
         apiService = ApiClient.getClient().create(ApiService.class);
+        firebaseFirestore = FirebaseFirestore.getInstance();
+        currentUserId = FirebaseAuth.getInstance().getUid();
 
         MaterialToolbar toolbar = findViewById(R.id.toolbar);
         if (toolbar != null) {
@@ -53,8 +58,9 @@ public class PostedItemsActivity extends AppCompatActivity {
 
     private void setupRecyclerView() {
         rvPostedItems.setLayoutManager(new LinearLayoutManager(this));
-        postedItemsAdapter = new PostedItemsAdapter(this, myPosts);
-        rvPostedItems.setAdapter(postedItemsAdapter);
+        // Use UnifiedPostAdapter instead of PostedItemsAdapter (BUG 2 FIX)
+        UnifiedPostAdapter adapter = new UnifiedPostAdapter(this, myPosts, firebaseFirestore, currentUserId);
+        rvPostedItems.setAdapter(adapter);
     }
 
     private void fetchMyPosts() {
@@ -73,7 +79,7 @@ public class PostedItemsActivity extends AppCompatActivity {
                 if (response.isSuccessful() && response.body() != null && response.body().getData() != null) {
                     myPosts.clear();
                     myPosts.addAll(response.body().getData().getPosts());
-                    postedItemsAdapter.notifyDataSetChanged();
+                    rvPostedItems.getAdapter().notifyDataSetChanged();
                     
                     if (myPosts.isEmpty()) {
                         tvNoPosts.setVisibility(View.VISIBLE);
@@ -96,3 +102,5 @@ public class PostedItemsActivity extends AppCompatActivity {
         });
     }
 }
+
+

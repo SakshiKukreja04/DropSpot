@@ -15,9 +15,14 @@ import retrofit2.converter.gson.GsonConverterFactory;
 public class ApiClient {
     private static final String TAG = "ApiClient";
     
-    // IF USING EMULATOR, USE 10.0.2.2
-    // IF USING PHYSICAL DEVICE, USE YOUR COMPUTER'S IP (e.g., 192.168.x.x)
+    // IF USING EMULATOR, USE 10.0.2.2:5000
+    // IF USING PHYSICAL DEVICE, USE YOUR COMPUTER'S IP:5000
+    // ⚠️ CRITICAL: Device and Computer MUST be on SAME WiFi network!
+    // Computer IP: 192.168.29.133 (WiFi: VESITSTUDENT)
+    // Backend running on port 5000
+//    private static final String BASE_URL = "http://192.168.174.183:5000/api/";
     private static final String BASE_URL = "http://192.168.29.133:5000/api/";
+
     private static Retrofit retrofit = null;
 
     public static Retrofit getClient() {

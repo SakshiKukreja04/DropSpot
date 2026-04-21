@@ -1,6 +1,7 @@
 import express from 'express';
 import { db } from '../config/firebase.js';
 import { generateId, getCurrentTimestamp, successResponse, errorResponse } from '../utils/helpers.js';
+import { sendFCMNotification } from '../utils/fcm-helper.js';
 
 const router = express.Router();
 
@@ -11,6 +12,8 @@ router.get('/:userId', async (req, res, next) => {
   try {
     const { userId } = req.params;
     const { limit = 20, offset = 0, unreadOnly = false } = req.query;
+
+    console.log(`[NOTIFICATIONS] Fetching notifications for user: ${userId}`);
 
     // Check authorization
     if (req.user.uid !== userId) {
@@ -24,21 +27,48 @@ router.get('/:userId', async (req, res, next) => {
       query = query.where('read', '==', false);
     }
 
-    const snapshot = await query.orderBy('createdAt', 'desc').limit(parseInt(limit) + parseInt(offset)).get();
+    // Get all notifications without orderBy (to avoid composite index requirement)
+    // Sort them in JavaScript instead
+    const snapshot = await query.limit(parseInt(limit) + parseInt(offset) + 100).get();
 
     let notifications = [];
     snapshot.forEach((doc) => {
-      notifications.push(doc.data());
+      const data = doc.data();
+      notifications.push({
+        id: doc.id,
+        notificationId: data.notificationId,
+        userId: data.userId,
+        title: data.title,
+        message: data.message,
+        type: data.type,
+        read: data.read,
+        isRead: data.read,
+        createdAt: data.createdAt,
+        timestamp: data.timestamp || new Date(data.createdAt),
+        relatedId: data.relatedId,
+        relatedType: data.relatedType,
+        trackingNumber: data.trackingNumber,
+        itemTitle: data.itemTitle
+      });
     });
 
-    // Apply offset
+    // Sort by timestamp in JavaScript (descending)
+    notifications.sort((a, b) => {
+      const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+      const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+      return timeB - timeA;
+    });
+
+    console.log(`[NOTIFICATIONS] Found ${notifications.length} notifications for user: ${userId}`);
+
+    // Apply offset and limit
     notifications = notifications.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
 
     res.status(200).json(
       successResponse({ notifications, count: notifications.length }, 'Notifications retrieved successfully')
     );
   } catch (error) {
-    console.error('Error getting notifications:', error);
+    console.error('[NOTIFICATIONS] Error getting notifications:', error);
     next(error);
   }
 });
@@ -208,6 +238,121 @@ router.get('/:userId/unread-count', async (req, res, next) => {
     res.status(200).json(successResponse({ unreadCount }, 'Unread count retrieved successfully'));
   } catch (error) {
     console.error('Error getting unread count:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /notifications/send-fcm - Send FCM notification to a user
+ */
+router.post('/send-fcm', async (req, res, next) => {
+  try {
+    const { userId, title, body, type, postId, trackingNumber, itemTitle } = req.body;
+
+    console.log('[Notifications] Received send-fcm request:', {
+      userId,
+      title,
+      body,
+      type,
+      postId,
+      trackingNumber,
+      itemTitle,
+    });
+
+    if (!userId || !title || !body) {
+      console.error('[Notifications] Missing required fields');
+      return res.status(400).json(errorResponse('userId, title, and body are required', 'INVALID_INPUT', 400));
+    }
+
+    try {
+      console.log('[Notifications] Attempting to send FCM notification');
+      // Send FCM notification
+      const result = await sendFCMNotification(userId, title, body, {
+        recipientUserId: userId,
+        type: type || 'INFO',
+        postId: postId || '',
+        trackingNumber: trackingNumber || '',
+        itemTitle: itemTitle || '',
+        timestamp: new Date().toISOString(),
+      });
+
+      console.log('[Notifications] FCM sent successfully, now saving to Firestore');
+      // Save to Firestore for persistence
+      await db.collection('notifications').add({
+        userId: userId,
+        receiverId: userId,
+        senderId: 'system',
+        title: title,
+        body: body,
+        type: type || 'INFO',
+        postId: postId || null,
+        trackingNumber: trackingNumber || null,
+        itemTitle: itemTitle || null,
+        read: false,
+        timestamp: getCurrentTimestamp(),
+      });
+
+      console.log('[Notifications] Notification saved to Firestore');
+      res.status(200).json(successResponse(result, 'FCM notification sent successfully'));
+    } catch (fcmError) {
+      console.error('[Notifications] FCM error:', fcmError.message);
+      // If FCM token not found, still save to Firestore and return success
+      if (fcmError.message.includes('No FCM token found')) {
+        console.log(`[Notifications] FCM token not available for user ${userId}, saving to Firestore only`);
+
+        // Save to Firestore anyway
+        await db.collection('notifications').add({
+          userId: userId,
+          receiverId: userId,
+          senderId: 'system',
+          title: title,
+          body: body,
+          type: type || 'INFO',
+          postId: postId || null,
+          trackingNumber: trackingNumber || null,
+          itemTitle: itemTitle || null,
+          read: false,
+          timestamp: getCurrentTimestamp(),
+        });
+
+        return res.status(200).json(successResponse(
+          { saved: true, fcmSent: false },
+          'Notification saved to Firestore (FCM token not available - user may not have app installed or FCM not initialized)'
+        ));
+      }
+
+      throw fcmError;
+    }
+  } catch (error) {
+    console.error('[Notifications] Error in send-fcm endpoint:', error);
+    // Always save to Firestore, even on error
+    try {
+      const { userId, title, body, type, postId, trackingNumber, itemTitle } = req.body;
+      if (userId && title && body) {
+        await db.collection('notifications').add({
+          userId: userId,
+          receiverId: userId,
+          senderId: 'system',
+          title: title,
+          body: body,
+          type: type || 'INFO',
+          postId: postId || null,
+          trackingNumber: trackingNumber || null,
+          itemTitle: itemTitle || null,
+          read: false,
+          timestamp: getCurrentTimestamp(),
+          error: error.message,
+        });
+
+        return res.status(200).json(successResponse(
+          { saved: true, fcmSent: false, error: error.message },
+          'Notification saved to Firestore (FCM delivery failed)'
+        ));
+      }
+    } catch (saveError) {
+      console.error('[Notifications] Failed to save to Firestore:', saveError);
+    }
+
     next(error);
   }
 });

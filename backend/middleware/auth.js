@@ -2,7 +2,6 @@ import { auth } from '../config/firebase.js';
 
 /**
  * Middleware to verify Firebase auth token
- * Verifies the Authorization header and attaches user info to request
  */
 export const verifyToken = async (req, res, next) => {
   try {
@@ -17,13 +16,12 @@ export const verifyToken = async (req, res, next) => {
       });
     }
 
-    // Extract token more robustly handling multiple spaces and trimming
     const token = authHeader.replace(/^Bearer\s+/, '').trim();
 
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: 'Malformed authorization header: Token missing',
+        message: 'Malformed authorization header',
         error: 'INVALID_TOKEN_FORMAT',
         code: 401,
       });
@@ -40,7 +38,7 @@ export const verifyToken = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error('Token verification error:', error.message);
+    console.error('[AUTH] Token verification error:', error.message);
 
     let message = 'Invalid or expired token';
     let errorType = 'INVALID_TOKEN';
@@ -49,8 +47,8 @@ export const verifyToken = async (req, res, next) => {
       message = 'Firebase ID token has expired';
       errorType = 'TOKEN_EXPIRED';
     } else if (error.code === 'auth/argument-error') {
-      message = 'Invalid token format or project mismatch';
-      errorType = 'ARGUMENT_ERROR';
+      message = 'Invalid token format';
+      errorType = 'INVALID_FORMAT';
     }
 
     return res.status(401).json({
@@ -58,7 +56,6 @@ export const verifyToken = async (req, res, next) => {
       message: message,
       error: errorType,
       code: 401,
-      details: error.message
     });
   }
 };
@@ -67,7 +64,11 @@ export const verifyToken = async (req, res, next) => {
  * Global error handling middleware
  */
 export const errorHandler = (err, req, res, next) => {
-  console.error('Error:', err);
+  console.error('[ERROR]', {
+    message: err.message,
+    code: err.code,
+    status: err.status,
+  });
 
   const status = err.status || 500;
   const message = err.message || 'Internal Server Error';
@@ -89,5 +90,6 @@ export const notFoundHandler = (req, res) => {
     message: 'Route not found',
     error: 'NOT_FOUND',
     code: 404,
+    path: req.originalUrl,
   });
 };

@@ -58,7 +58,7 @@ router.post('/', async (req, res, next) => {
     });
     console.log(`[PAYMENT] Notification saved to Firestore - userId: ${ownerId}, notificationId: ${notificationId}`);
 
-    // 4. Fetch owner's FCM token and send real-time push notification
+    // 4. CRITICAL: Always send FCM notification to owner + queue for offline delivery
     console.log(`[PAYMENT] 📢 Attempting to send FCM notification to owner: ${ownerId}`);
     try {
       const ownerDoc = await db.collection('users').doc(ownerId).get();
@@ -69,13 +69,34 @@ router.post('/', async (req, res, next) => {
         const hasFCMToken = !!ownerData.fcmToken;
         console.log(`[PAYMENT] ✅ Owner document found - has FCM token: ${hasFCMToken}`);
 
+        // ALWAYS queue notification regardless of FCM token status
+        const queueId = generateId();
+        await db.collection('pendingNotifications').doc(queueId).set({
+          queueId,
+          userId: ownerId,
+          title: 'Payment Received 💰',
+          body: 'Your item (' + (paymentData.postId || 'unknown') + ') has been paid for!',
+          data: {
+            type: 'PAYMENT_SUCCESS',
+            postId,
+            paymentId,
+            recipientUserId: ownerId
+          },
+          status: 'pending',
+          createdAt: timestamp,
+          retryCount: 0,
+          maxRetries: 5
+        });
+        console.log(`[PAYMENT] ✅ Notification queued for offline delivery - Queue ID: ${queueId}`);
+
+        // Try to send FCM if owner has token (for immediate delivery if online)
         if (ownerData.fcmToken && ownerData.fcmToken.trim() !== '') {
           try {
-            console.log(`[PAYMENT] 📤 Calling sendFCMNotification for owner ${ownerId}`);
+            console.log(`[PAYMENT] 📤 Sending immediate FCM to owner ${ownerId}`);
             await sendFCMNotification(
               ownerId,
               'Payment Received 💰',
-              'Payment has been completed for your item',
+              'Your item has been paid for! Please dispatch it.',
               {
                 type: 'PAYMENT_SUCCESS',
                 postId,
@@ -84,43 +105,24 @@ router.post('/', async (req, res, next) => {
               }
             );
             console.log(`[PAYMENT] ✅✅ FCM notification sent successfully to owner: ${ownerId}`);
+
+            // Mark queued notification as sent
+            await db.collection('pendingNotifications').doc(queueId).update({
+              status: 'sent_via_fcm',
+              sentAt: timestamp
+            });
           } catch (fcmError) {
-            console.error(`[PAYMENT] ❌ FCM sending failed for owner ${ownerId}:`, fcmError.message);
-            console.error(`[PAYMENT] Full FCM error:`, fcmError);
-            // Don't fail the payment - notification is already saved in DB
+            console.error(`[PAYMENT] ⚠️  FCM sending failed for owner ${ownerId}, will send on next login`);
+            console.log(`[PAYMENT] FCM Error:`, fcmError.message);
+            // Notification stays in pending queue - will be sent when owner logs in
           }
         } else {
-           console.warn(`[PAYMENT] ⚠️  Owner ${ownerId} has no valid FCM token - push not sent`);
-           console.log(`[PAYMENT] ⏳ Queuing notification for later delivery when owner logs in`);
-
-           // Queue notification to be sent later
-           try {
-             const queueId = generateId();
-             await db.collection('pendingNotifications').doc(queueId).set({
-               queueId,
-               userId: ownerId,
-               title: 'Payment Received 💰',
-               body: 'Payment has been completed for your item',
-               data: {
-                 type: 'PAYMENT_SUCCESS',
-                 postId,
-                 paymentId,
-                 recipientUserId: ownerId
-               },
-               status: 'pending',
-               createdAt: timestamp,
-               retryCount: 0,
-               maxRetries: 5
-             });
-             console.log(`[PAYMENT] ✅ Notification queued for ${ownerId} - Queue ID: ${queueId}`);
-           } catch (queueError) {
-             console.error(`[PAYMENT] ❌ Error queuing notification:`, queueError.message);
-           }
+          console.warn(`[PAYMENT] ⚠️  Owner ${ownerId} has no valid FCM token - notification queued for login`);
         }
       }
     } catch (pushError) {
-      console.error('[PAYMENT] ❌ Unexpected error in FCM section:', pushError.message);
-      console.error('[PAYMENT] This error will not fail the payment', pushError);
+      console.error('[PAYMENT] ⚠️  Error in FCM section:', pushError.message);
+      console.log('[PAYMENT] Payment still successful, notification will be delivered later');
       // Don't fail the entire payment request
     }
 

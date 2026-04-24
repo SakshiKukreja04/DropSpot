@@ -1,7 +1,6 @@
 import express from 'express';
 import { db } from '../config/firebase.js';
 import { getCurrentTimestamp, successResponse, errorResponse } from '../utils/helpers.js';
-import { sendFCMNotification } from '../utils/fcm-helper.js';
 
 const router = express.Router();
 
@@ -92,7 +91,6 @@ router.put('/:userId', async (req, res, next) => {
     await userRef.update(updateData);
     const updatedUser = { ...userDoc.data(), ...updateData };
 
-    return res.status(200).json(successResponse(updatedUser, 'User updated successfully'));
   } catch (error) {
     next(error);
   }

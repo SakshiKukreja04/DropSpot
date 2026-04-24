@@ -15,13 +15,17 @@ import com.bumptech.glide.Glide;
 import com.google.android.gms.auth.api.signin.GoogleSignIn;
 import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
+import android.util.Log;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 public class ProfileActivity extends AppCompatActivity {
 
     private SessionManager sessionManager;
     private ImageView ivProfileImage;
     private ActivityResultLauncher<String> imagePickerLauncher;
+    private static final String TAG = "ProfileActivity";
+    private ApiService apiService;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -29,6 +33,7 @@ public class ProfileActivity extends AppCompatActivity {
         setContentView(R.layout.activity_profile);
 
         sessionManager = new SessionManager(this);
+        apiService = ApiClient.getClient().create(ApiService.class);
 
         ivProfileImage = findViewById(R.id.ivProfileImage);
         TextView tvProfileName = findViewById(R.id.tvProfileName);
@@ -76,6 +81,35 @@ public class ProfileActivity extends AppCompatActivity {
     }
 
     private void logout() {
+        String userId = FirebaseAuth.getInstance().getUid();
+        
+        // Delete FCM token on backend
+        if (userId != null && !userId.isEmpty()) {
+            java.util.Map<String, Object> update = new java.util.HashMap<>();
+            update.put("fcmToken", null);
+            
+            apiService.updateUserProfile(userId, update).enqueue(new retrofit2.Callback<ApiResponse<Object>>() {
+                @Override
+                public void onResponse(retrofit2.Call<ApiResponse<Object>> call, retrofit2.Response<ApiResponse<Object>> response) {
+                    Log.d(TAG, "FCM token cleared on backend");
+                }
+
+                @Override
+                public void onFailure(retrofit2.Call<ApiResponse<Object>> call, Throwable t) {
+                    Log.e(TAG, "Failed to clear FCM token on backend", t);
+                }
+            });
+        }
+        
+        // Delete local FCM token
+        FirebaseMessaging.getInstance().deleteToken().addOnCompleteListener(task -> {
+            if (task.isSuccessful()) {
+                Log.d(TAG, "FCM token deleted locally");
+            } else {
+                Log.e(TAG, "Failed to delete FCM token locally");
+            }
+        });
+        
         FirebaseAuth.getInstance().signOut();
 
         GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)

@@ -33,23 +33,21 @@ public class ProfileFragment extends Fragment {
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-        // Fixed: Use activity_profile layout as fragment_profile does not exist
         View view = inflater.inflate(R.layout.activity_profile, container, false);
 
         sessionManager = new SessionManager(requireContext());
 
-        // Fixed: Updated IDs to match activity_profile.xml
         ImageView ivProfile = view.findViewById(R.id.ivProfileImage);
         TextView tvName = view.findViewById(R.id.tvProfileName);
         TextView tvEmail = view.findViewById(R.id.tvProfileEmail);
         Button btnEditProfile = view.findViewById(R.id.btnEditProfile);
         Button btnViewMyPosts = view.findViewById(R.id.btnViewMyPosts);
+        Button btnMyRequests = view.findViewById(R.id.btnMyRequests);
         Button btnLogout = view.findViewById(R.id.btnLogout);
 
         // Populate data from SessionManager
         String name = sessionManager.getUserName();
         String email = sessionManager.getUserEmail();
-        // Fixed: Use getUserPhotoUrl() instead of getUserPhoto()
         String photoUrl = sessionManager.getUserPhotoUrl();
 
         tvName.setText(name != null ? name : "User Name");
@@ -70,10 +68,16 @@ public class ProfileFragment extends Fragment {
             });
         }
 
+        if (btnMyRequests != null) {
+            btnMyRequests.setOnClickListener(v -> {
+                Intent intent = new Intent(getActivity(), MyRequestsActivity.class);
+                startActivity(intent);
+            });
+        }
+
         if (btnLogout != null) {
             btnLogout.setOnClickListener(v -> {
                 FirebaseAuth.getInstance().signOut();
-                // Fixed: Use logout() instead of clearSession()
                 sessionManager.logout();
                 Toast.makeText(getContext(), "Logged Out", Toast.LENGTH_SHORT).show();
                 Intent intent = new Intent(getActivity(), LoginActivity.class);

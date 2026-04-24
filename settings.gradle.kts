@@ -16,6 +16,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven("https://jitpack.io")
+        maven("https://razorpay.jfrog.io/artifactory/maven-public")
     }
 }
 

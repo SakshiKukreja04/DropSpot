@@ -1,8 +1,12 @@
 package com.example.dropspot;
 
+import android.app.Dialog;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -69,14 +73,15 @@ public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder
             title.setText(item.title);
             category.setText(item.category);
             
-            // Show Price and Distance: "₹500 • 1.2 km away"
             String priceText = String.format("₹%.0f", item.price);
             String distanceText = String.format("%.1f km away", item.distance);
             distance.setText(priceText + " • " + distanceText);
             
-            if (item.images != null && !item.images.isEmpty()) {
+            String imageUrl = (item.images != null && !item.images.isEmpty()) ? item.images.get(0) : null;
+            
+            if (imageUrl != null) {
                 Glide.with(itemView.getContext())
-                    .load(item.images.get(0))
+                    .load(imageUrl)
                     .placeholder(R.drawable.ic_launcher_background)
                     .error(R.drawable.ic_launcher_background)
                     .into(image);
@@ -85,8 +90,11 @@ public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder
             }
             
             itemView.setOnClickListener(v -> listener.onItemClick(item));
-            itemView.setOnLongClickListener(v -> {
-                listener.onItemLongClick(item);
+            
+            image.setOnLongClickListener(v -> {
+                if (imageUrl != null) {
+                    showFullImage(itemView.getContext(), imageUrl);
+                }
                 return true;
             });
 
@@ -94,6 +102,29 @@ public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.FeedViewHolder
                 btnDelete.setVisibility(showDelete ? View.VISIBLE : View.GONE);
                 btnDelete.setOnClickListener(v -> listener.onDeleteClick(item));
             }
+        }
+
+        private void showFullImage(android.content.Context context, String imageUrl) {
+            Dialog dialog = new Dialog(context);
+            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            dialog.setContentView(R.layout.activity_item_detail); // Using a placeholder for now or creating a tiny dynamic layout
+            
+            // Simplified full-screen image viewer
+            ImageView fullImageView = new ImageView(context);
+            fullImageView.setLayoutParams(new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+            fullImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            fullImageView.setBackgroundColor(Color.BLACK);
+            
+            Glide.with(context).load(imageUrl).into(fullImageView);
+            
+            dialog.setContentView(fullImageView);
+            if (dialog.getWindow() != null) {
+                dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.BLACK));
+                dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            }
+            dialog.show();
         }
     }
 }

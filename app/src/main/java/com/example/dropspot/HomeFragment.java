@@ -21,6 +21,8 @@ import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import java.util.ArrayList;
 import java.util.List;
 import retrofit2.Call;
@@ -47,6 +49,15 @@ public class HomeFragment extends Fragment implements FeedAdapter.OnItemClickLis
         View bottomNavigation = view.findViewById(R.id.bottomNavigation);
         if (bottomNavigation != null) bottomNavigation.setVisibility(View.GONE);
 
+        // ✅ Check Firebase Authentication
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            Log.e(TAG, "❌ NO FIREBASE USER LOGGED IN - API calls will fail!");
+            Toast.makeText(getContext(), "⚠️ Not logged in. Please sign in.", Toast.LENGTH_LONG).show();
+            return view;
+        }
+        Log.d(TAG, "✅ Firebase user logged in: " + user.getUid());
+
         apiService = ApiClient.getClient().create(ApiService.class);
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(requireContext());
 
@@ -64,7 +75,7 @@ public class HomeFragment extends Fragment implements FeedAdapter.OnItemClickLis
         requestLocationAndLoadPosts();
 
         if (fabPostItem != null) {
-            fabPostItem.setOnClickListener(v -> startActivity(new Intent(getActivity(), PostItemActivity.class)));
+            fabPostItem.setOnClickListener(v -> showCreationOptions());
         }
 
         if (categoryChips != null) {
@@ -108,6 +119,8 @@ public class HomeFragment extends Fragment implements FeedAdapter.OnItemClickLis
         isRefreshing = true;
         if (swipeRefreshLayout != null) swipeRefreshLayout.setRefreshing(true);
 
+        Log.d(TAG, "🔍 Loading posts - Category: " + category + ", Location: " + currentLat + "," + currentLng);
+        
         // Fixed: maxDistance should be Integer (50), not Double (50.0)
         apiService.getPosts(category, 50, 0, currentLat, currentLng, 50, false).enqueue(new Callback<ApiResponse<PostList>>() {
             @Override
@@ -115,13 +128,31 @@ public class HomeFragment extends Fragment implements FeedAdapter.OnItemClickLis
                 isRefreshing = false;
                 if (swipeRefreshLayout != null) swipeRefreshLayout.setRefreshing(false);
                 
+                Log.d(TAG, "📡 API Response Code: " + response.code());
+                
                 if (response.isSuccessful() && response.body() != null && response.body().getData() != null) {
-                    allPosts.clear();
                     List<Post> fetchedPosts = response.body().getData().getPosts();
+                    Log.d(TAG, "✅ Received " + (fetchedPosts != null ? fetchedPosts.size() : 0) + " posts");
+                    
+                    allPosts.clear();
                     if (fetchedPosts != null) allPosts.addAll(fetchedPosts);
                     feedAdapter.notifyDataSetChanged();
+                    
+                    if (allPosts.isEmpty()) {
+                        Log.w(TAG, "⚠️ No posts returned from backend");
+                        Toast.makeText(getContext(), "No posts available", Toast.LENGTH_SHORT).show();
+                    }
                 } else {
-                    Log.e(TAG, "Load failed: " + response.code());
+                    Log.e(TAG, "❌ Load failed: HTTP " + response.code());
+                    if (response.errorBody() != null) {
+                        try {
+                            String errorBody = response.errorBody().string();
+                            Log.e(TAG, "Error body: " + errorBody);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Could not parse error body");
+                        }
+                    }
+                    Toast.makeText(getContext(), "Failed to load posts: " + response.code(), Toast.LENGTH_SHORT).show();
                 }
             }
 
@@ -129,7 +160,9 @@ public class HomeFragment extends Fragment implements FeedAdapter.OnItemClickLis
             public void onFailure(@NonNull Call<ApiResponse<PostList>> call, @NonNull Throwable t) {
                 isRefreshing = false;
                 if (swipeRefreshLayout != null) swipeRefreshLayout.setRefreshing(false);
-                Log.e(TAG, "Network failure: " + t.getMessage());
+                Log.e(TAG, "❌ Network failure: " + t.getMessage());
+                t.printStackTrace();
+                Toast.makeText(getContext(), "Network error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
             }
         });
     }
@@ -157,5 +190,21 @@ public class HomeFragment extends Fragment implements FeedAdapter.OnItemClickLis
                         @Override public void onFailure(@NonNull Call<ApiResponse<Void>> call, @NonNull Throwable t) {}
                     });
                 }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void showCreationOptions() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
+        builder.setTitle("What would you like to create?")
+                .setItems(new CharSequence[]{"📦 Post Item", "📍 Event"}, (dialog, which) -> {
+                    if (which == 0) {
+                        // Post option - launch PostItemActivity
+                        startActivity(new Intent(getActivity(), PostItemActivity.class));
+                    } else if (which == 1) {
+                        // Event option - launch CreateEventActivity
+                        startActivity(new Intent(getActivity(), CreateEventActivity.class));
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 }

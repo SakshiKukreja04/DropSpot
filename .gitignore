@@ -21,6 +21,11 @@ local.properties
 .env
 .env.local
 .env.*.local
+serviceAccountKey.json
+
+# Dependencies (should not be in git)
+node_modules/
+**/node_modules/
 
 # Android build specific
 .gradle/
@@ -38,3 +43,7 @@ captures/
 .idea/
 *.iml
 .DS_Store
+
+# Misc
+*.log
+dist/

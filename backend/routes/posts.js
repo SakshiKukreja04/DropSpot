@@ -86,7 +86,7 @@ router.get('/', async (req, res, next) => {
     snapshot.forEach(doc => {
       const data = doc.data();
       if (myPostsOnly !== 'true' && data.userId === currentUserId) return;
-      posts.push(data);
+      posts.push({ ...data, id: data.id || doc.id });
     });
 
     if (latitude !== undefined && longitude !== undefined) {
@@ -121,28 +121,21 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json(errorResponse('Post not found', 'NOT_FOUND', 404));
     }
 
-    const post = doc.data();
+    const post = { ...doc.data(), id: doc.id };
 
-    // Fetch owner details using the 'userId' field from the post
     const ownerId = post.userId;
     if (ownerId) {
         const userDoc = await db.collection('users').doc(ownerId).get();
         if (userDoc.exists) {
             const userData = userDoc.data();
-            // Try different possible name fields used in registration/login
             post.ownerName = userData.name || userData.fullName || userData.displayName || 'Anonymous';
             post.ownerEmail = userData.email;
             post.ownerPhoto = userData.photo || userData.photoURL || userData.photoUri;
-
-            console.log(`Found owner ${post.ownerName} for post ${id}`);
-        } else {
-            console.log(`Owner document ${ownerId} not found for post ${id}`);
         }
     }
 
     res.status(200).json(successResponse(post, 'Post retrieved successfully'));
   } catch (error) {
-    console.error(`Error fetching post ${id}:`, error);
     next(error);
   }
 });

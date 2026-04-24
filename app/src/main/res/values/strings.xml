@@ -20,4 +20,7 @@
     <string name="contact_details_placeholder">Contact: 123-456-7890</string>
     <string name="request_item">Request Item</string>
     <string name="item_image_content_description">Item Image</string>
+
+    <!-- Google Sign-In Client ID -->
+    <string name="default_web_client_id">YOUR_WEB_CLIENT_ID_HERE</string>
 </resources>

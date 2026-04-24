@@ -26,6 +26,8 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.auth.GoogleAuthProvider;
 
+import com.google.firebase.messaging.FirebaseMessaging;
+
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
@@ -165,6 +167,10 @@ public class LoginActivity extends AppCompatActivity {
             public void onResponse(Call<ApiResponse<Object>> call, Response<ApiResponse<Object>> response) {
                 sessionManager.saveUser(name, email, photoUrl);
                 Toast.makeText(LoginActivity.this, "Welcome " + name, Toast.LENGTH_SHORT).show();
+                
+                // Save FCM token after successful login
+                saveFCMTokenAfterLogin(user.getUid());
+                
                 startActivity(new Intent(LoginActivity.this, MainActivity.class));
                 finish();
             }
@@ -172,8 +178,38 @@ public class LoginActivity extends AppCompatActivity {
             @Override
             public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
                 sessionManager.saveUser(name, email, photoUrl);
+                
+                // Save FCM token even if sync fails
+                saveFCMTokenAfterLogin(user.getUid());
+                
                 startActivity(new Intent(LoginActivity.this, MainActivity.class));
                 finish();
+            }
+        });
+    }
+    
+    private void saveFCMTokenAfterLogin(String userId) {
+        FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+            if (task.isSuccessful()) {
+                String token = task.getResult();
+                Log.d(TAG, "FCM Token obtained: " + token.substring(0, 20) + "...");
+                
+                java.util.Map<String, Object> update = new java.util.HashMap<>();
+                update.put("fcmToken", token);
+                
+                apiService.updateUserProfile(userId, update).enqueue(new Callback<ApiResponse<Object>>() {
+                    @Override
+                    public void onResponse(Call<ApiResponse<Object>> call, Response<ApiResponse<Object>> response) {
+                        Log.d(TAG, "FCM Token saved to server after login");
+                    }
+
+                    @Override
+                    public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
+                        Log.e(TAG, "Failed to save FCM token after login", t);
+                    }
+                });
+            } else {
+                Log.e(TAG, "Failed to get FCM token", task.getException());
             }
         });
     }

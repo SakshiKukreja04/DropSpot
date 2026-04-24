@@ -4,25 +4,46 @@ import android.app.DatePickerDialog;
 import android.app.TimePickerDialog;
 import android.content.Intent;
 import android.os.Bundle;
-import android.view.View;
 import android.widget.EditText;
 import android.widget.Toast;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
-import com.google.android.material.bottomnavigation.BottomNavigationView;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.material.button.MaterialButton;
+import com.google.firebase.auth.FirebaseAuth;
 import java.util.Calendar;
 import java.util.Locale;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 public class CreateEventActivity extends AppCompatActivity {
-
     private EditText etEventTitle, etEventDescription, etEventCategory, etEventLocation, etEventStart, etEventEnd;
     private MaterialButton btnCreateEvent;
+    private String currentUserId, currentUserName;
+    private FusedLocationProviderClient fusedLocationClient;
+    private double currentLat = 0, currentLng = 0;
+    private ApiService apiService;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_create_event);
+
+        FirebaseAuth auth = FirebaseAuth.getInstance();
+        currentUserId = auth.getUid();
+        currentUserName = auth.getCurrentUser() != null ? auth.getCurrentUser().getDisplayName() : "Anonymous";
+        
+        apiService = ApiClient.getClient().create(ApiService.class);
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        
+        getLocationForEvent();
 
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
@@ -44,12 +65,58 @@ public class CreateEventActivity extends AppCompatActivity {
 
         btnCreateEvent.setOnClickListener(v -> {
             if (validateInputs()) {
-                Toast.makeText(this, "Event Created Successfully!", Toast.LENGTH_SHORT).show();
-                finish();
+                createEvent();
             }
         });
+    }
 
-        setupBottomNavigation();
+    private void getLocationForEvent() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 101);
+            return;
+        }
+
+        fusedLocationClient.getLastLocation().addOnSuccessListener(location -> {
+            if (location != null) {
+                currentLat = location.getLatitude();
+                currentLng = location.getLongitude();
+            }
+        });
+    }
+
+    private void createEvent() {
+        String eventName = etEventTitle.getText().toString().trim();
+        String description = etEventDescription.getText().toString().trim();
+        String startTime = etEventStart.getText().toString().trim();
+        String endTime = etEventEnd.getText().toString().trim();
+        String location = etEventLocation.getText().toString().trim();
+        String category = etEventCategory.getText().toString().trim();
+
+        Event event = new Event(eventName, description, "", startTime, endTime, location);
+        event.category = category;
+        event.latitude = currentLat;
+        event.longitude = currentLng;
+        
+        btnCreateEvent.setEnabled(false);
+        
+        apiService.createEvent(event).enqueue(new Callback<ApiResponse<Event>>() {
+            @Override
+            public void onResponse(@NonNull Call<ApiResponse<Event>> call, @NonNull Response<ApiResponse<Event>> response) {
+                btnCreateEvent.setEnabled(true);
+                if (response.isSuccessful() && response.body() != null && response.body().success) {
+                    Toast.makeText(CreateEventActivity.this, "Event Created Successfully! Nearby users will be notified.", Toast.LENGTH_SHORT).show();
+                    finish();
+                } else {
+                    Toast.makeText(CreateEventActivity.this, "Failed to create event", Toast.LENGTH_SHORT).show();
+                }
+            }
+
+            @Override
+            public void onFailure(@NonNull Call<ApiResponse<Event>> call, @NonNull Throwable t) {
+                btnCreateEvent.setEnabled(true);
+                Toast.makeText(CreateEventActivity.this, "Network Error", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     private void showDateTimePicker(final EditText editText) {
@@ -77,32 +144,5 @@ public class CreateEventActivity extends AppCompatActivity {
             return false;
         }
         return true;
-    }
-
-    private void setupBottomNavigation() {
-        BottomNavigationView bottomNavigation = findViewById(R.id.bottomNavigation);
-        if (bottomNavigation != null) {
-            bottomNavigation.setOnItemSelectedListener(item -> {
-                int itemId = item.getItemId();
-                if (itemId == R.id.nav_home) {
-                    startActivity(new Intent(this, HomeActivity.class));
-                    finish();
-                    return true;
-                } else if (itemId == R.id.nav_saved) {
-                    startActivity(new Intent(this, PostedItemsActivity.class));
-                    finish();
-                    return true;
-                } else if (itemId == R.id.nav_announcements) {
-                    startActivity(new Intent(this, AnnouncementsActivity.class));
-                    finish();
-                    return true;
-                } else if (itemId == R.id.nav_profile) {
-                    startActivity(new Intent(this, ProfileActivity.class));
-                    finish();
-                    return true;
-                }
-                return false;
-            });
-        }
     }
 }

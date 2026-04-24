@@ -1,6 +1,7 @@
 import express from 'express';
 import { db, FieldValue } from '../config/firebase.js';
 import { generateId, getCurrentTimestamp, successResponse, errorResponse } from '../utils/helpers.js';
+import { sendPushNotification } from '../utils/notifications.js';
 
 const router = express.Router();
 
@@ -26,7 +27,7 @@ const handleStatusUpdate = async (id, status, userId, res) => {
     const timestamp = getCurrentTimestamp();
     const batch = db.batch();
 
-    // 1. Update request status
+    // 1. Update Firestore: requests/{requestId} status = "accepted", respondedAt = timestamp
     batch.update(db.collection('requests').doc(id), {
       status,
       respondedAt: timestamp,
@@ -34,7 +35,7 @@ const handleStatusUpdate = async (id, status, userId, res) => {
     });
 
     if (status === 'accepted') {
-      // 2. Mark post as inactive
+      // 2. Also update post: posts/{postId} isActive = false
       batch.update(db.collection('posts').doc(request.postId), {
         isActive: false,
         acceptedRequestId: id,
@@ -57,19 +58,48 @@ const handleStatusUpdate = async (id, status, userId, res) => {
     await batch.commit();
     console.log(`[STATUS_UPDATE] SUCCESS: Request ${id} is now ${status}`);
 
-    // Notification creation
+    // Notification creation (Database) - Send to REQUESTER when their request is accepted/rejected
     const notificationId = generateId();
     await db.collection('notifications').doc(notificationId).set({
       notificationId,
-      userId: request.requesterId,
+      userId: request.requesterId, // CORRECT: Send to requester who sent the request
       type: `request_${status}`,
       title: status === 'accepted' ? 'Request Accepted' : 'Request Rejected',
-      message: `Your request for "${request.postTitle}" has been ${status}.`,
+      message: status === 'accepted' ? 'Your request has been accepted. Proceed to payment.' : `Your request for "${request.postTitle}" was not accepted.`,
       relatedId: id,
       relatedType: 'request',
       read: false,
       createdAt: timestamp
     });
+
+    // Real-time Push Notification to REQUESTER (NOT owner) - CRITICAL FIX
+    try {
+      // IMPORTANT: Send to requesterId (buyer), NOT postOwnerId (seller)
+      console.log(`[REQUEST_STATUS] Sending "${status}" notification to requester: ${request.requesterId}`);
+      const requesterDoc = await db.collection('users').doc(request.requesterId).get();
+      if (requesterDoc.exists) {
+        const userData = requesterDoc.data();
+        if (userData.fcmToken) {
+          console.log(`[FCM] Token found for requester ${request.requesterId}, sending notification`);
+          await sendPushNotification(
+            userData.fcmToken,
+            status === 'accepted' ? 'Request Accepted ✅' : 'Request Rejected ❌',
+            status === 'accepted' ? 'Your request has been accepted. Proceed to payment.' : `Your request for "${request.postTitle}" was ${status}.`,
+            {
+              type: 'request_update',
+              requestId: id,
+              status: status,
+              postId: request.postId,
+              recipientUserId: request.requesterId
+            }
+          );
+        } else {
+          console.warn(`[FCM] No FCM token found for requester ${request.requesterId}`);
+        }
+      }
+    } catch (pushError) {
+      console.error('[FCM] Error sending push during status update:', pushError);
+    }
 
     return res.status(200).json(successResponse(null, `Request ${status}`));
   } catch (error) {
@@ -88,6 +118,7 @@ router.post('/', async (req, res, next) => {
 
     if (!postId || !message) return res.status(400).json(errorResponse('Post ID and message are required', 'VALIDATION_ERROR', 400));
 
+    // 2. After saving: Fetch postOwnerId
     const postDoc = await db.collection('posts').doc(postId).get();
     if (!postDoc.exists) return res.status(404).json(errorResponse('Post not found', 'NOT_FOUND', 404));
 
@@ -99,12 +130,14 @@ router.post('/', async (req, res, next) => {
     const userDoc = await db.collection('users').doc(userId).get();
     const userData = userDoc.exists ? userDoc.data() : {};
 
+    // 1. Save request in Firestore with required fields
     const request = {
       id: requestId,
       requestId,
       postId,
       postOwnerId: post.userId,
       postTitle: post.title,
+      postPrice: post.price || 0,
       requesterId: userId,
       requesterName: userData.name || userData.displayName || 'Anonymous',
       requesterPhoto: userData.photo || userData.photoURL || '',
@@ -117,6 +150,50 @@ router.post('/', async (req, res, next) => {
 
     await db.collection('requests').doc(requestId).set(request);
     await db.collection('posts').doc(postId).update({ requestCount: FieldValue.increment(1) });
+
+    // 3. Create database notification for Post Owner
+    const notificationId = generateId();
+    await db.collection('notifications').doc(notificationId).set({
+      notificationId,
+      userId: post.userId, // CRITICAL: Save to OWNER only
+      type: 'new_request',
+      title: 'New Request 📬',
+      message: `${request.requesterName} is interested in "${post.title}"`,
+      relatedId: requestId,
+      relatedType: 'request',
+      read: false,
+      createdAt: timestamp
+    });
+
+    // 4. Send FCM push notification to Post Owner ONLY
+    try {
+      console.log(`[REQUEST_CREATE] Sending FCM notification to owner: ${post.userId}`);
+      // CRITICAL: Send ONLY to OWNER of the post, NOT the requester
+      const ownerDoc = await db.collection('users').doc(post.userId).get();
+      if (ownerDoc.exists) {
+        const ownerData = ownerDoc.data();
+        if (ownerData.fcmToken) {
+          console.log(`[FCM] Sending "New Request" to owner ${post.userId}`);
+          // Send notification: Title: "New Request", Message: "You received a request for your item"
+          await sendPushNotification(
+            ownerData.fcmToken,
+            'New Request 📬',
+            `${request.requesterName} is interested in "${post.title}"`,
+            {
+              type: 'new_request',
+              requestId: requestId,
+              postId: postId,
+              requesterName: request.requesterName,
+              recipientUserId: post.userId
+            }
+          );
+        } else {
+          console.warn(`[FCM] Owner ${post.userId} has no FCM token`);
+        }
+      }
+    } catch (pushError) {
+      console.error('[FCM] Error sending push for new request:', pushError);
+    }
 
     res.status(201).json(successResponse(request, 'Request sent'));
   } catch (error) { next(error); }

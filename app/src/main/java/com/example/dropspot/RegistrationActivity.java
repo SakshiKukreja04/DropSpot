@@ -26,6 +26,7 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.auth.GoogleAuthProvider;
 import com.google.firebase.auth.UserProfileChangeRequest;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -169,6 +170,10 @@ public class RegistrationActivity extends AppCompatActivity {
             public void onResponse(Call<ApiResponse<Object>> call, Response<ApiResponse<Object>> response) {
                 sessionManager.saveUser(name, email, photoUrl);
                 Toast.makeText(RegistrationActivity.this, "Welcome " + name, Toast.LENGTH_SHORT).show();
+                
+                // Save FCM token after successful registration
+                saveFCMTokenAfterRegistration(user.getUid());
+                
                 startActivity(new Intent(RegistrationActivity.this, MainActivity.class));
                 finish();
             }
@@ -176,8 +181,38 @@ public class RegistrationActivity extends AppCompatActivity {
             @Override
             public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
                 sessionManager.saveUser(name, email, photoUrl);
+                
+                // Save FCM token even if sync fails
+                saveFCMTokenAfterRegistration(user.getUid());
+                
                 startActivity(new Intent(RegistrationActivity.this, MainActivity.class));
                 finish();
+            }
+        });
+    }
+    
+    private void saveFCMTokenAfterRegistration(String userId) {
+        FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+            if (task.isSuccessful()) {
+                String token = task.getResult();
+                Log.d(TAG, "FCM Token obtained during registration: " + token.substring(0, 20) + "...");
+                
+                java.util.Map<String, Object> update = new java.util.HashMap<>();
+                update.put("fcmToken", token);
+                
+                apiService.updateUserProfile(userId, update).enqueue(new Callback<ApiResponse<Object>>() {
+                    @Override
+                    public void onResponse(Call<ApiResponse<Object>> call, Response<ApiResponse<Object>> response) {
+                        Log.d(TAG, "FCM Token saved to server after registration");
+                    }
+
+                    @Override
+                    public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
+                        Log.e(TAG, "Failed to save FCM token after registration", t);
+                    }
+                });
+            } else {
+                Log.e(TAG, "Failed to get FCM token during registration", task.getException());
             }
         });
     }

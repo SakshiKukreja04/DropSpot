@@ -44,13 +44,14 @@ public class RequestAdapter extends RecyclerView.Adapter<RequestAdapter.RequestV
     }
 
     static class RequestViewHolder extends RecyclerView.ViewHolder {
-        TextView name, message, status;
+        TextView name, email, message, status;
         ImageView photo;
         Button btnAccept, btnReject;
 
         public RequestViewHolder(@NonNull View itemView) {
             super(itemView);
             name = itemView.findViewById(R.id.tv_requester_name);
+            email = itemView.findViewById(R.id.tv_requester_email);
             message = itemView.findViewById(R.id.tv_request_message);
             status = itemView.findViewById(R.id.tv_request_status);
             photo = itemView.findViewById(R.id.iv_requester_photo);
@@ -59,12 +60,19 @@ public class RequestAdapter extends RecyclerView.Adapter<RequestAdapter.RequestV
         }
 
         public void bind(Request request, OnRequestActionListener listener) {
-            name.setText(request.requesterName);
-            message.setText(request.message);
-            status.setText("Status: " + request.status);
+            name.setText(request.requesterName != null ? request.requesterName : "Unknown");
+            email.setText(request.requesterEmail != null ? request.requesterEmail : "No email provided");
+            message.setText(request.message != null ? request.message : "No message");
+            status.setText("Status: " + (request.status != null ? request.status : "pending"));
 
             if (request.requesterPhoto != null && !request.requesterPhoto.isEmpty()) {
-                Glide.with(itemView.getContext()).load(request.requesterPhoto).into(photo);
+                Glide.with(itemView.getContext())
+                        .load(request.requesterPhoto)
+                        .circleCrop()
+                        .placeholder(R.drawable.ic_launcher_background)
+                        .into(photo);
+            } else {
+                photo.setImageResource(R.drawable.ic_launcher_background);
             }
 
             if ("pending".equals(request.status)) {
@@ -75,6 +83,12 @@ public class RequestAdapter extends RecyclerView.Adapter<RequestAdapter.RequestV
             } else {
                 btnAccept.setVisibility(View.GONE);
                 btnReject.setVisibility(View.GONE);
+                
+                if ("accepted".equals(request.status)) {
+                    status.setTextColor(itemView.getContext().getResources().getColor(android.R.color.holo_green_dark));
+                } else if (request.status != null && request.status.startsWith("rejected")) {
+                    status.setTextColor(itemView.getContext().getResources().getColor(android.R.color.holo_red_dark));
+                }
             }
         }
     }

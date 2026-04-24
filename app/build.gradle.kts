@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.example.dropspot"
-    compileSdk = 36 
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.dropspot"
         minSdk = 24
-        targetSdk = 36 
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -30,8 +30,22 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-}
 
+    packagingOptions {
+        resources {
+            excludes += "META-INF/proguard/androidx-*.pro"
+            excludes += "META-INF/LICENSE"
+            excludes += "META-INF/NOTICE"
+            excludes += "META-INF/LICENSE.txt"
+            excludes += "META-INF/NOTICE.txt"
+        }
+    }
+
+    lint {
+        disable.add("MissingDimensionScript")
+        disable.add("MissingTranslation")
+    }
+}
 dependencies {
     implementation(libs.appcompat)
     implementation(libs.material)
@@ -50,7 +64,10 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.storage)
-    implementation("com.google.firebase:firebase-installations:18.0.0")
+    implementation(libs.firebase.messaging)
+    implementation(libs.firebase.analytics)
+    implementation("com.google.firebase:firebase-installations")
+    implementation("com.google.firebase:firebase-firestore")
     implementation(libs.play.services.auth)
     implementation("com.google.android.gms:play-services-location:21.3.0")
 

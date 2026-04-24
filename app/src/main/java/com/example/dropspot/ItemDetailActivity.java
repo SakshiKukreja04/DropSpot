@@ -98,12 +98,15 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
                         checkOwnershipAndLoadRequests();
                         checkIfAlreadyRequested();
                     }
+                } else {
+                    Toast.makeText(ItemDetailActivity.this, "Post not found", Toast.LENGTH_SHORT).show();
+                    finish();
                 }
             }
 
             @Override
             public void onFailure(@NonNull Call<ApiResponse<Post>> call, @NonNull Throwable t) {
-                Toast.makeText(ItemDetailActivity.this, "Failed to load details", Toast.LENGTH_SHORT).show();
+                Toast.makeText(ItemDetailActivity.this, "Failed to load details: " + t.getMessage(), Toast.LENGTH_SHORT).show();
             }
         });
     }
@@ -121,6 +124,8 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
         
         if (post.ownerPhoto != null && !post.ownerPhoto.isEmpty()) {
             Glide.with(this).load(post.ownerPhoto).circleCrop().placeholder(R.drawable.ic_launcher_background).into(ivOwnerPhoto);
+        } else {
+            ivOwnerPhoto.setImageResource(R.drawable.ic_launcher_background);
         }
 
         if (post.images != null && !post.images.isEmpty()) {
@@ -196,7 +201,9 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
             }
 
             @Override
-            public void onFailure(Call<ApiResponse<List<Request>>> call, Throwable t) {}
+            public void onFailure(Call<ApiResponse<List<Request>>> call, Throwable t) {
+                Log.e(TAG, "Error loading requests: " + t.getMessage());
+            }
         });
     }
 
@@ -211,12 +218,14 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
                     btnRequestItem.setText("Request Sent");
                 } else {
                     btnRequestItem.setEnabled(true);
+                    Toast.makeText(ItemDetailActivity.this, "Request failed", Toast.LENGTH_SHORT).show();
                 }
             }
 
             @Override
             public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
                 btnRequestItem.setEnabled(true);
+                Toast.makeText(ItemDetailActivity.this, "Network error", Toast.LENGTH_SHORT).show();
             }
         });
     }
@@ -247,36 +256,20 @@ public class ItemDetailActivity extends AppCompatActivity implements RequestAdap
             @Override
             public void onResponse(Call<ApiResponse<Object>> call, Response<ApiResponse<Object>> response) {
                 if (response.isSuccessful()) {
+                    Toast.makeText(ItemDetailActivity.this, "Request " + status, Toast.LENGTH_SHORT).show();
                     if ("accepted".equals(status)) {
-                        closePostAfterAcceptance();
+                        loadPostDetails(); // Refresh post status (it becomes inactive)
                     } else {
-                        loadRequestsForPost();
+                        loadRequestsForPost(); // Refresh list to update status UI
                     }
                 } else {
-                    Toast.makeText(ItemDetailActivity.this, "Failed to update request", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(ItemDetailActivity.this, "Failed to update request: " + response.code(), Toast.LENGTH_SHORT).show();
                 }
             }
 
             @Override
             public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
-                Toast.makeText(ItemDetailActivity.this, "Network error", Toast.LENGTH_SHORT).show();
-            }
-        });
-    }
-
-    private void closePostAfterAcceptance() {
-        if (currentPost == null) return;
-
-        currentPost.isActive = false;
-        apiService.updatePost(currentPost.id, currentPost).enqueue(new Callback<ApiResponse<Post>>() {
-            @Override
-            public void onResponse(Call<ApiResponse<Post>> call, Response<ApiResponse<Post>> response) {
-                loadPostDetails(); // Refresh everything
-            }
-
-            @Override
-            public void onFailure(Call<ApiResponse<Post>> call, Throwable t) {
-                loadPostDetails();
+                Toast.makeText(ItemDetailActivity.this, "Network error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
             }
         });
     }

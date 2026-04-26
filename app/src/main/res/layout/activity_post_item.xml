@@ -64,16 +64,30 @@
                         android:scaleType="centerCrop"
                         android:src="@android:drawable/ic_menu_gallery" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_upload_image"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_centerInParent="true"
-                        android:backgroundTint="#80FFFFFF"
-                        android:text="Select Photo"
-                        android:textColor="@color/colorPrimary"
-                        app:icon="@android:drawable/ic_menu_camera" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:orientation="vertical">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_upload_image"
+                            style="@style/Widget.MaterialComponents.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:backgroundTint="#80FFFFFF"
+                            android:text="Gallery or Camera"
+                            android:textColor="@color/colorPrimary"
+                            app:icon="@android:drawable/ic_menu_camera" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Tap to select or take photos"
+                            android:textColor="@color/colorPrimary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
 
                     <ProgressBar
                         android:id="@+id/post_progress_bar"

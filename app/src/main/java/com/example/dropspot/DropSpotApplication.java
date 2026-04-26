@@ -30,14 +30,14 @@ public class DropSpotApplication extends android.app.Application {
         FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
             if (!task.isSuccessful()) {
                 Log.e(TAG, "❌ Fetching FCM token failed", task.getException());
-                
+
                 // Retry after delay
                 if (fcmRetryCount < MAX_FCM_RETRIES) {
                     fcmRetryCount++;
                     Log.d(TAG, "🔄 Retrying FCM initialization (attempt " + fcmRetryCount + "/" + MAX_FCM_RETRIES + ")");
                     new Handler(Looper.getMainLooper()).postDelayed(
                         this::initializeFCM,
-                        5000 * fcmRetryCount  // Exponential backoff
+                        5000L * fcmRetryCount  // Exponential backoff
                     );
                 }
                 return;
@@ -74,7 +74,7 @@ public class DropSpotApplication extends android.app.Application {
         java.util.Map<String, Object> update = new java.util.HashMap<>();
         update.put("fcmToken", token);
         
-        apiService.updateUserProfile(userId, update).enqueue(new retrofit2.Callback<ApiResponse<Object>>() {
+        apiService.updateUserProfile(userId, update).enqueue(new retrofit2.Callback<>() {
             @Override
             public void onResponse(retrofit2.Call<ApiResponse<Object>> call, retrofit2.Response<ApiResponse<Object>> response) {
                 if (response.isSuccessful()) {
@@ -107,7 +107,7 @@ public class DropSpotApplication extends android.app.Application {
         Log.d(TAG, "⏳ Processing pending notifications for user: " + userId);
         ApiService apiService = ApiClient.getClient().create(ApiService.class);
         
-        apiService.processPendingNotifications(userId).enqueue(new retrofit2.Callback<ApiResponse<Object>>() {
+        apiService.processPendingNotifications(userId).enqueue(new retrofit2.Callback<>() {
             @Override
             public void onResponse(retrofit2.Call<ApiResponse<Object>> call, retrofit2.Response<ApiResponse<Object>> response) {
                 if (response.isSuccessful()) {

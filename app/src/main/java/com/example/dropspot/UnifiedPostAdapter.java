@@ -181,6 +181,7 @@ public class UnifiedPostAdapter extends RecyclerView.Adapter<UnifiedPostAdapter.
                             Log.d("STATUS_CHECK", "No payments found for post: " + item.title + " - Checking requests...");
                             firebaseFirestore.collection("requests")
                                     .whereEqualTo("postId", item.id)
+                                    .whereEqualTo("postOwnerId", currentUserId)
                                     .whereEqualTo("status", "accepted")
                                     .get()
                                     .addOnSuccessListener(requestSnapshots -> {

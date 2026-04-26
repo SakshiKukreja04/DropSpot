@@ -52,13 +52,17 @@ public class PostedItemsActivity extends AppCompatActivity {
         if (swipeRefreshLayout != null) {
             swipeRefreshLayout.setOnRefreshListener(this::fetchMyPosts);
         }
+    }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // FORCE DATA REFRESH when returning to this screen
         fetchMyPosts();
     }
 
     private void setupRecyclerView() {
         rvPostedItems.setLayoutManager(new LinearLayoutManager(this));
-        // Use UnifiedPostAdapter instead of PostedItemsAdapter (BUG 2 FIX)
         UnifiedPostAdapter adapter = new UnifiedPostAdapter(this, myPosts, firebaseFirestore, currentUserId);
         rvPostedItems.setAdapter(adapter);
     }
@@ -68,7 +72,6 @@ public class PostedItemsActivity extends AppCompatActivity {
             swipeRefreshLayout.setRefreshing(true);
         }
 
-        // Call API with myPostsOnly=true
         apiService.getPosts(null, 50, 0, null, null, null, true).enqueue(new Callback<ApiResponse<PostList>>() {
             @Override
             public void onResponse(@NonNull Call<ApiResponse<PostList>> call, @NonNull Response<ApiResponse<PostList>> response) {
@@ -79,7 +82,9 @@ public class PostedItemsActivity extends AppCompatActivity {
                 if (response.isSuccessful() && response.body() != null && response.body().getData() != null) {
                     myPosts.clear();
                     myPosts.addAll(response.body().getData().getPosts());
-                    rvPostedItems.getAdapter().notifyDataSetChanged();
+                    if (rvPostedItems.getAdapter() != null) {
+                        rvPostedItems.getAdapter().notifyDataSetChanged();
+                    }
                     
                     if (myPosts.isEmpty()) {
                         tvNoPosts.setVisibility(View.VISIBLE);
@@ -102,5 +107,3 @@ public class PostedItemsActivity extends AppCompatActivity {
         });
     }
 }
-
-

@@ -2,106 +2,125 @@ import express from 'express';
 import { db, FieldValue } from '../config/firebase.js';
 import { generateId, getCurrentTimestamp, successResponse, errorResponse } from '../utils/helpers.js';
 import { sendPushNotification } from '../utils/notifications.js';
+import { sendFCMNotification } from '../utils/fcm-helper.js';
 
 const router = express.Router();
 
 /**
- * Handle Request Status Update (Shared Logic)
+ * Handle Request Status Update
+ * Ensures status is strictly one of: "pending", "accepted", "rejected"
  */
 const handleStatusUpdate = async (id, status, userId, res) => {
-  console.log(`[STATUS_UPDATE] Request: ${id}, New Status: ${status}, By User: ${userId}`);
+  const normalizedStatus = status ? status.toLowerCase().trim() : "";
+
+  // 1. Enforce strict status values
+  const allowedStatuses = ['pending', 'accepted', 'rejected'];
+  if (!allowedStatuses.includes(normalizedStatus)) {
+    console.error(`[STATUS_UPDATE] Invalid status: ${status}`);
+    return res.status(400).json(errorResponse('Invalid status. Allowed: pending, accepted, rejected', 'INVALID_INPUT', 400));
+  }
+
+  // 4. Add logging: FINAL STATUS
+  console.log("FINAL STATUS:", normalizedStatus);
 
   try {
-    const doc = await db.collection('requests').doc(id).get();
-    if (!doc.exists) {
-      console.error(`[STATUS_UPDATE] Request ${id} NOT FOUND`);
+    const requestRef = db.collection('requests').doc(id);
+    const requestDoc = await requestRef.get();
+
+    if (!requestDoc.exists) {
+      console.error(`[STATUS_UPDATE] ERROR: Request ${id} not found`);
       return res.status(404).json(errorResponse('Request not found', 'NOT_FOUND', 404));
     }
 
-    const request = doc.data();
-    if (request.postOwnerId !== userId) {
-      console.error(`[STATUS_UPDATE] Unauthorized: User ${userId} is not owner ${request.postOwnerId}`);
+    const requestData = requestDoc.data();
+    if (requestData.postOwnerId !== userId) {
+      console.error(`[STATUS_UPDATE] ERROR: Unauthorized. Owner=${requestData.postOwnerId}, Actor=${userId}`);
       return res.status(403).json(errorResponse('Unauthorized', 'FORBIDDEN', 403));
     }
 
     const timestamp = getCurrentTimestamp();
     const batch = db.batch();
 
-    // 1. Update Firestore: requests/{requestId} status = "accepted", respondedAt = timestamp
-    batch.update(db.collection('requests').doc(id), {
-      status,
+    // 3. Ensure Firestore always stores exact match: status = "accepted"
+    batch.update(requestRef, {
+      status: normalizedStatus,
       respondedAt: timestamp,
-      respondedBy: userId
+      respondedBy: userId,
+      updatedAt: timestamp
     });
 
-    if (status === 'accepted') {
-      // 2. Also update post: posts/{postId} isActive = false
-      batch.update(db.collection('posts').doc(request.postId), {
-        isActive: false,
+    if (normalizedStatus === 'accepted') {
+      const postRef = db.collection('posts').doc(requestData.postId);
+      batch.update(postRef, {
         acceptedRequestId: id,
         updatedAt: timestamp
       });
 
-      // 3. Auto-reject others
-      const others = await db.collection('requests')
-        .where('postId', '==', request.postId)
+      // Reject all other pending requests for the same post
+      const othersSnapshot = await db.collection('requests')
+        .where('postId', '==', requestData.postId)
         .where('status', '==', 'pending')
         .get();
 
-      others.forEach(oDoc => {
+      othersSnapshot.forEach(oDoc => {
         if (oDoc.id !== id) {
-          batch.update(oDoc.ref, { status: 'rejected_auto', respondedAt: timestamp, respondedBy: userId });
+          // 2. Replace: "rejected_auto" → "rejected"
+          batch.update(oDoc.ref, {
+            status: 'rejected',
+            respondedAt: timestamp,
+            respondedBy: userId
+          });
         }
       });
     }
 
     await batch.commit();
-    console.log(`[STATUS_UPDATE] SUCCESS: Request ${id} is now ${status}`);
+    console.log(`[STATUS_UPDATE] SUCCESS: committed status ${normalizedStatus} for request ${id}`);
 
-    // Notification creation (Database) - Send to REQUESTER when their request is accepted/rejected
+    // Fetch updated data for notification and response
+    const updatedDoc = await requestRef.get();
+    const updatedRequest = updatedDoc.data();
+
+    // Ensure ID fields are consistent
+    if (!updatedRequest.requestId) updatedRequest.requestId = id;
+    if (!updatedRequest.id) updatedRequest.id = id;
+
+    // Notification Logic
     const notificationId = generateId();
     await db.collection('notifications').doc(notificationId).set({
       notificationId,
-      userId: request.requesterId, // CORRECT: Send to requester who sent the request
-      type: `request_${status}`,
-      title: status === 'accepted' ? 'Request Accepted' : 'Request Rejected',
-      message: status === 'accepted' ? 'Your request has been accepted. Proceed to payment.' : `Your request for "${request.postTitle}" was not accepted.`,
+      userId: updatedRequest.requesterId,
+      type: `request_${normalizedStatus}`,
+      title: normalizedStatus === 'accepted' ? 'Request Accepted' : 'Request Rejected',
+      message: normalizedStatus === 'accepted' ? 'Your request has been accepted. Proceed to payment.' : `Your request for "${updatedRequest.postTitle}" was not accepted.`,
       relatedId: id,
       relatedType: 'request',
       read: false,
-      createdAt: timestamp
+      createdAt: timestamp,
+      timestamp: new Date()
     });
 
-    // Real-time Push Notification to REQUESTER (NOT owner) - CRITICAL FIX
     try {
-      // IMPORTANT: Send to requesterId (buyer), NOT postOwnerId (seller)
-      console.log(`[REQUEST_STATUS] Sending "${status}" notification to requester: ${request.requesterId}`);
-      const requesterDoc = await db.collection('users').doc(request.requesterId).get();
-      if (requesterDoc.exists) {
-        const userData = requesterDoc.data();
-        if (userData.fcmToken) {
-          console.log(`[FCM] Token found for requester ${request.requesterId}, sending notification`);
-          await sendPushNotification(
-            userData.fcmToken,
-            status === 'accepted' ? 'Request Accepted ✅' : 'Request Rejected ❌',
-            status === 'accepted' ? 'Your request has been accepted. Proceed to payment.' : `Your request for "${request.postTitle}" was ${status}.`,
-            {
-              type: 'request_update',
-              requestId: id,
-              status: status,
-              postId: request.postId,
-              recipientUserId: request.requesterId
-            }
-          );
-        } else {
-          console.warn(`[FCM] No FCM token found for requester ${request.requesterId}`);
-        }
+      const requesterDoc = await db.collection('users').doc(updatedRequest.requesterId).get();
+      if (requesterDoc.exists && requesterDoc.data().fcmToken) {
+        await sendPushNotification(
+          requesterDoc.data().fcmToken,
+          normalizedStatus === 'accepted' ? 'Request Accepted ✅' : 'Request Rejected ❌',
+          normalizedStatus === 'accepted' ? 'Your request has been accepted. Proceed to payment.' : `Your request for "${updatedRequest.postTitle}" was ${normalizedStatus}.`,
+          {
+            type: 'request_update',
+            requestId: id,
+            status: normalizedStatus,
+            postId: updatedRequest.postId,
+            recipientUserId: updatedRequest.requesterId
+          }
+        );
       }
     } catch (pushError) {
-      console.error('[FCM] Error sending push during status update:', pushError);
+      console.error('[FCM] Error sending push:', pushError);
     }
 
-    return res.status(200).json(successResponse(null, `Request ${status}`));
+    return res.status(200).json(successResponse(updatedRequest, `Request ${normalizedStatus}`));
   } catch (error) {
     console.error(`[STATUS_UPDATE] CRITICAL ERROR:`, error);
     return res.status(500).json(errorResponse('Server update failed', 'SERVER_ERROR', 500));
@@ -109,28 +128,48 @@ const handleStatusUpdate = async (id, status, userId, res) => {
 };
 
 /**
- * POST /requests - Create a new request
+ * GET /api/requests
+ * UI RULE: Do NOT hide requests if post.isActive = false (Standard fetch returns all)
  */
+router.get('/', async (req, res, next) => {
+  try {
+    const { type } = req.query;
+    const userId = req.user.uid;
+    let query = db.collection('requests');
+
+    if (type === 'my_sent') {
+      query = query.where('requesterId', '==', userId);
+    } else {
+      query = query.where('postOwnerId', '==', userId);
+    }
+
+    const snapshot = await query.get();
+    const requests = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      if (!data.requestId) data.requestId = doc.id;
+      if (!data.id) data.id = doc.id;
+      requests.push(data);
+    });
+
+    res.status(200).json(successResponse(requests, 'Requests fetched'));
+  } catch (error) { next(error); }
+});
+
 router.post('/', async (req, res, next) => {
   try {
     const { postId, message } = req.body;
     const userId = req.user.uid;
 
-    if (!postId || !message) return res.status(400).json(errorResponse('Post ID and message are required', 'VALIDATION_ERROR', 400));
-
-    // 2. After saving: Fetch postOwnerId
     const postDoc = await db.collection('posts').doc(postId).get();
     if (!postDoc.exists) return res.status(404).json(errorResponse('Post not found', 'NOT_FOUND', 404));
 
     const post = postDoc.data();
-    if (post.userId === userId) return res.status(400).json(errorResponse('Cannot request your own post', 'INVALID_REQUEST', 400));
-
     const requestId = generateId();
     const timestamp = getCurrentTimestamp();
     const userDoc = await db.collection('users').doc(userId).get();
     const userData = userDoc.exists ? userDoc.data() : {};
 
-    // 1. Save request in Firestore with required fields
     const request = {
       id: requestId,
       requestId,
@@ -151,86 +190,102 @@ router.post('/', async (req, res, next) => {
     await db.collection('requests').doc(requestId).set(request);
     await db.collection('posts').doc(postId).update({ requestCount: FieldValue.increment(1) });
 
-    // 3. Create database notification for Post Owner
     const notificationId = generateId();
     await db.collection('notifications').doc(notificationId).set({
       notificationId,
-      userId: post.userId, // CRITICAL: Save to OWNER only
+      userId: post.userId,
       type: 'new_request',
       title: 'New Request 📬',
       message: `${request.requesterName} is interested in "${post.title}"`,
       relatedId: requestId,
       relatedType: 'request',
       read: false,
-      createdAt: timestamp
+      createdAt: timestamp,
+      timestamp: new Date()
     });
 
-    // 4. Send FCM push notification to Post Owner ONLY
     try {
-      console.log(`[REQUEST_CREATE] Sending FCM notification to owner: ${post.userId}`);
-      // CRITICAL: Send ONLY to OWNER of the post, NOT the requester
       const ownerDoc = await db.collection('users').doc(post.userId).get();
-      if (ownerDoc.exists) {
-        const ownerData = ownerDoc.data();
-        if (ownerData.fcmToken) {
-          console.log(`[FCM] Sending "New Request" to owner ${post.userId}`);
-          // Send notification: Title: "New Request", Message: "You received a request for your item"
-          await sendPushNotification(
-            ownerData.fcmToken,
-            'New Request 📬',
-            `${request.requesterName} is interested in "${post.title}"`,
-            {
-              type: 'new_request',
-              requestId: requestId,
-              postId: postId,
-              requesterName: request.requesterName,
-              recipientUserId: post.userId
-            }
-          );
-        } else {
-          console.warn(`[FCM] Owner ${post.userId} has no FCM token`);
-        }
+      if (ownerDoc.exists && ownerDoc.data().fcmToken) {
+        await sendPushNotification(
+          ownerDoc.data().fcmToken,
+          'New Request 📬',
+          `${request.requesterName} is interested in "${post.title}"`,
+          { type: 'new_request', requestId, postId, recipientUserId: post.userId }
+        );
       }
     } catch (pushError) {
-      console.error('[FCM] Error sending push for new request:', pushError);
+      console.error('[FCM] Error sending push:', pushError);
     }
 
     res.status(201).json(successResponse(request, 'Request sent'));
   } catch (error) { next(error); }
 });
 
-/**
- * GET /requests - Fetch requests
- */
-router.get('/', async (req, res, next) => {
-  try {
-    const { type } = req.query;
-    const userId = req.user.uid;
-    let query = db.collection('requests');
-    if (type === 'my_sent') query = query.where('requesterId', '==', userId);
-    else query = query.where('postOwnerId', '==', userId);
-
-    const snapshot = await query.get();
-    const requests = [];
-    snapshot.forEach(doc => requests.push(doc.data()));
-    requests.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    res.status(200).json(successResponse(requests, 'Requests fetched'));
-  } catch (error) { next(error); }
-});
-
-/**
- * PUT /requests/:id/status
- */
 router.put('/:id/status', async (req, res, next) => {
   try {
     await handleStatusUpdate(req.params.id, req.body.status, req.user.uid, res);
   } catch (error) { next(error); }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.post('/:id/dispatch', async (req, res) => {
   try {
-    await handleStatusUpdate(req.params.id, req.body.status, req.user.uid, res);
-  } catch (error) { next(error); }
+    const requestId = req.params.id;
+    const userId = req.user.uid;
+    const { trackingNumber } = req.body;
+
+    const doc = await db.collection('requests').doc(requestId).get();
+    if (!doc.exists) return res.status(404).json(errorResponse('Request not found', 'NOT_FOUND', 404));
+
+    const request = doc.data();
+    if (request.postOwnerId !== userId) return res.status(403).json(errorResponse('Unauthorized', 'FORBIDDEN', 403));
+
+    await db.collection('requests').doc(requestId).update({
+      status: 'dispatched',
+      trackingNumber: trackingNumber || 'N/A',
+      dispatchedAt: getCurrentTimestamp()
+    });
+
+    await sendFCMNotification(
+      request.requesterId,
+      'Order Dispatched 📦',
+      `Your order for "${request.postTitle}" has been dispatched.`,
+      { type: 'order_dispatched', requestId, postId: request.postId }
+    );
+
+    res.status(200).json(successResponse(null, 'Order dispatched'));
+  } catch (error) {
+    res.status(500).json(errorResponse('Dispatch failed', 'SERVER_ERROR', 500));
+  }
+});
+
+router.post('/:id/confirm-delivery', async (req, res) => {
+  try {
+    const requestId = req.params.id;
+    const userId = req.user.uid;
+
+    const doc = await db.collection('requests').doc(requestId).get();
+    if (!doc.exists) return res.status(404).json(errorResponse('Request not found', 'NOT_FOUND', 404));
+
+    const request = doc.data();
+    if (request.requesterId !== userId) return res.status(403).json(errorResponse('Unauthorized', 'FORBIDDEN', 403));
+
+    await db.collection('requests').doc(requestId).update({
+      status: 'completed',
+      deliveredAt: getCurrentTimestamp()
+    });
+
+    await sendFCMNotification(
+      request.postOwnerId,
+      'Order Completed ✅',
+      `Buyer confirmed delivery for "${request.postTitle}".`,
+      { type: 'order_completed', requestId, postId: request.postId }
+    );
+
+    res.status(200).json(successResponse(null, 'Delivery confirmed'));
+  } catch (error) {
+    res.status(500).json(errorResponse('Confirmation failed', 'SERVER_ERROR', 500));
+  }
 });
 
 export default router;

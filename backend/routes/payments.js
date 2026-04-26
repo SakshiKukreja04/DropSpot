@@ -6,13 +6,14 @@ import { sendFCMNotification } from '../utils/fcm-helper.js';
 const router = express.Router();
 
 /**
- * POST /payments - Save payment and notify owner
+ * POST /payments - Save payment and notify owner + requester
+ * Ensures the transition to "paid" status is correctly handled for both owner and requester.
  */
 router.post('/', async (req, res, next) => {
   try {
-    const { paymentId, postId, requesterId, ownerId, amount, status } = req.body;
+    const { paymentId, postId, requesterId, ownerId, amount } = req.body;
 
-    console.log(`[PAYMENT] Request received - paymentId: ${paymentId}, requesterId: ${requesterId}, ownerId: ${ownerId}`);
+    console.log(`[PAYMENT] Processing success for paymentId: ${paymentId}, postId: ${postId}`);
 
     if (!paymentId || !postId || !ownerId || !amount) {
       return res.status(400).json(errorResponse('Missing payment details', 'VALIDATION_ERROR', 400));
@@ -20,114 +21,94 @@ router.post('/', async (req, res, next) => {
 
     const timestamp = getCurrentTimestamp();
 
-    // 1. Save payment in Firestore
+    // 1. Save payment in Firestore with status "paid"
     const paymentData = {
       paymentId,
       postId,
       requesterId,
       ownerId,
       amount,
-      status,
-      createdAt: timestamp
+      status: 'paid', // BACKEND REQUIREMENT: status = "paid"
+      createdAt: timestamp,
+      updatedAt: timestamp
     };
 
     await db.collection('payments').doc(paymentId).set(paymentData);
-    console.log(`[PAYMENT] Payment saved to Firestore: ${paymentId}`);
 
-    // 2. Update post status to completed
+    // 2. Update post status
     await db.collection('posts').doc(postId).update({
-      paymentStatus: 'completed',
-      status: 'sold',
+      paymentStatus: 'paid',
       updatedAt: timestamp
     });
-    console.log(`[PAYMENT] Post status updated to sold: ${postId}`);
 
-    // 3. Create notification record in database (OWNER gets this notification)
-    const notificationId = generateId();
-    await db.collection('notifications').doc(notificationId).set({
-      notificationId,
-      userId: ownerId, // CRITICAL: Notification goes to OWNER, not requester
-      type: 'PAYMENT_SUCCESS', // Match frontend enum
-      title: 'Payment Received 💰',
-      message: 'Payment has been completed for your item',
-      relatedId: paymentId,
-      relatedType: 'payment',
-      read: false,
-      createdAt: timestamp,
-      timestamp: new Date() // Add timestamp field for sorting
-    });
-    console.log(`[PAYMENT] Notification saved to Firestore - userId: ${ownerId}, notificationId: ${notificationId}`);
+    // 3. Update the specific Request document to 'paid'
+    // This status is what triggers the Dispatch button on the owner side
+    const requestsSnapshot = await db.collection('requests')
+      .where('postId', '==', postId)
+      .where('requesterId', '==', requesterId)
+      .where('status', '==', 'accepted')
+      .limit(1)
+      .get();
 
-    // 4. CRITICAL: Always send FCM notification to owner + queue for offline delivery
-    console.log(`[PAYMENT] 📢 Attempting to send FCM notification to owner: ${ownerId}`);
-    try {
-      const ownerDoc = await db.collection('users').doc(ownerId).get();
-      if (!ownerDoc.exists) {
-        console.error(`[PAYMENT] ❌ Owner document not found in Firestore: ${ownerId}`);
-      } else {
-        const ownerData = ownerDoc.data();
-        const hasFCMToken = !!ownerData.fcmToken;
-        console.log(`[PAYMENT] ✅ Owner document found - has FCM token: ${hasFCMToken}`);
+    if (!requestsSnapshot.empty) {
+      const requestRef = requestsSnapshot.docs[0].ref;
+      await requestRef.update({
+        status: 'paid', // Exact match required by frontend
+        paymentId: paymentId,
+        paymentStatus: 'success',
+        updatedAt: timestamp
+      });
+      console.log(`[PAYMENT] Request ${requestRef.id} status updated to: "paid"`);
+    } else {
+      // Fallback search without requesterId if perfect match fails
+      const fallbackSnapshot = await db.collection('requests')
+        .where('postId', '==', postId)
+        .where('status', '==', 'accepted')
+        .limit(1)
+        .get();
 
-        // ALWAYS queue notification regardless of FCM token status
-        const queueId = generateId();
-        await db.collection('pendingNotifications').doc(queueId).set({
-          queueId,
-          userId: ownerId,
-          title: 'Payment Received 💰',
-          body: 'Your item (' + (paymentData.postId || 'unknown') + ') has been paid for!',
-          data: {
-            type: 'PAYMENT_SUCCESS',
-            postId,
-            paymentId,
-            recipientUserId: ownerId
-          },
-          status: 'pending',
-          createdAt: timestamp,
-          retryCount: 0,
-          maxRetries: 5
+      if (!fallbackSnapshot.empty) {
+        await fallbackSnapshot.docs[0].ref.update({
+          status: 'paid',
+          paymentId: paymentId,
+          paymentStatus: 'success',
+          updatedAt: timestamp
         });
-        console.log(`[PAYMENT] ✅ Notification queued for offline delivery - Queue ID: ${queueId}`);
-
-        // Try to send FCM if owner has token (for immediate delivery if online)
-        if (ownerData.fcmToken && ownerData.fcmToken.trim() !== '') {
-          try {
-            console.log(`[PAYMENT] 📤 Sending immediate FCM to owner ${ownerId}`);
-            await sendFCMNotification(
-              ownerId,
-              'Payment Received 💰',
-              'Your item has been paid for! Please dispatch it.',
-              {
-                type: 'PAYMENT_SUCCESS',
-                postId,
-                paymentId,
-                recipientUserId: ownerId
-              }
-            );
-            console.log(`[PAYMENT] ✅✅ FCM notification sent successfully to owner: ${ownerId}`);
-
-            // Mark queued notification as sent
-            await db.collection('pendingNotifications').doc(queueId).update({
-              status: 'sent_via_fcm',
-              sentAt: timestamp
-            });
-          } catch (fcmError) {
-            console.error(`[PAYMENT] ⚠️  FCM sending failed for owner ${ownerId}, will send on next login`);
-            console.log(`[PAYMENT] FCM Error:`, fcmError.message);
-            // Notification stays in pending queue - will be sent when owner logs in
-          }
-        } else {
-          console.warn(`[PAYMENT] ⚠️  Owner ${ownerId} has no valid FCM token - notification queued for login`);
-        }
+        console.log(`[PAYMENT] Fallback: Request ${fallbackSnapshot.docs[0].id} updated to "paid"`);
       }
-    } catch (pushError) {
-      console.error('[PAYMENT] ⚠️  Error in FCM section:', pushError.message);
-      console.log('[PAYMENT] Payment still successful, notification will be delivered later');
-      // Don't fail the entire payment request
     }
 
-    console.log(`[PAYMENT] SUCCESS: Payment processed - ${paymentId}, notification sent to owner: ${ownerId}`);
-    res.status(201).json(successResponse(paymentData, 'Payment processed successfully'));
+    // 4. Create Notification for Owner
+    try {
+      await db.collection('notifications').add({
+        userId: ownerId,
+        type: 'PAYMENT_RECEIVED',
+        title: 'Payment Received 💰',
+        message: `Your item has been paid for. Please dispatch the order.`,
+        postId: postId,
+        paymentId: paymentId,
+        read: false,
+        createdAt: timestamp,
+        timestamp: new Date()
+      });
+
+      // 5. Send FCM Push Notification to Owner
+      await sendFCMNotification(
+        ownerId,
+        'Payment Received 💰',
+        'Your item has been paid for. Please dispatch the order.',
+        {
+          type: 'PAYMENT_RECEIVED',
+          postId,
+          paymentId,
+          recipientUserId: ownerId
+        }
+      );
+    } catch (err) {
+      console.error('[PAYMENT] Error sending notification to owner:', err.message);
+    }
+
+    res.status(201).json(successResponse(paymentData, 'Payment processed successfully and status set to paid'));
   } catch (error) {
     console.error('[PAYMENT] ERROR:', error);
     next(error);

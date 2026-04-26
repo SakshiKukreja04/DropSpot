@@ -46,7 +46,15 @@ public class MyRequestsActivity extends AppCompatActivity {
 
         setupRecyclerView();
 
-        swipeRefreshLayout.setOnRefreshListener(this::fetchMyRequests);
+        if (swipeRefreshLayout != null) {
+            swipeRefreshLayout.setOnRefreshListener(this::fetchMyRequests);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // FORCE DATA REFRESH when returning from Payment or when screen is revisited
         fetchMyRequests();
     }
 
@@ -57,16 +65,27 @@ public class MyRequestsActivity extends AppCompatActivity {
     }
 
     private void fetchMyRequests() {
-        swipeRefreshLayout.setRefreshing(true);
+        if (swipeRefreshLayout != null) {
+            swipeRefreshLayout.setRefreshing(true);
+        }
+        
         apiService.getRequests("my_sent").enqueue(new Callback<ApiResponse<List<Request>>>() {
             @Override
             public void onResponse(@NonNull Call<ApiResponse<List<Request>>> call, @NonNull Response<ApiResponse<List<Request>>> response) {
-                swipeRefreshLayout.setRefreshing(false);
+                if (swipeRefreshLayout != null) {
+                    swipeRefreshLayout.setRefreshing(false);
+                }
+                
                 if (response.isSuccessful() && response.body() != null) {
                     requestList.clear();
                     List<Request> data = response.body().getData();
                     if (data != null) {
                         requestList.addAll(data);
+                        // Log fetched request status list for debugging
+                        Log.d("STATUS_CHECK", "Fetched " + data.size() + " requests for requester");
+                        for (Request r : data) {
+                            Log.d("STATUS_CHECK", "Requester View - Request ID: " + r.getEffectiveId() + ", Status: " + r.status);
+                        }
                     }
                     requestsAdapter.notifyDataSetChanged();
                     tvNoRequests.setVisibility(requestList.isEmpty() ? View.VISIBLE : View.GONE);
@@ -77,7 +96,9 @@ public class MyRequestsActivity extends AppCompatActivity {
 
             @Override
             public void onFailure(@NonNull Call<ApiResponse<List<Request>>> call, @NonNull Throwable t) {
-                swipeRefreshLayout.setRefreshing(false);
+                if (swipeRefreshLayout != null) {
+                    swipeRefreshLayout.setRefreshing(false);
+                }
                 Log.e(TAG, "Error fetching requests", t);
                 Toast.makeText(MyRequestsActivity.this, "Network error", Toast.LENGTH_SHORT).show();
             }

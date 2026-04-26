@@ -49,6 +49,20 @@ public interface ApiService {
     @PUT("requests/{id}")
     Call<ApiResponse<Object>> updateRequest(@Path("id") String requestId, @Body StatusUpdate status);
 
+    // Transaction Lifecycle Fix
+    @POST("requests/{id}/dispatch")
+    Call<ApiResponse<Object>> dispatchOrder(@Path("id") String requestId, @Body DispatchBody body);
+
+    @POST("requests/{id}/confirm-delivery")
+    Call<ApiResponse<Object>> confirmDelivery(@Path("id") String requestId);
+
+    // New Dispatch Endpoints
+    @POST("dispatch/mark-dispatched")
+    Call<ApiResponse<Object>> markOrderDispatched(@Body DispatchRequest request);
+
+    @POST("dispatch/mark-delivered")
+    Call<ApiResponse<Object>> markOrderDelivered(@Body DeliveryRequest request);
+
     // Saved Posts
     @POST("savedPosts")
     Call<ApiResponse<Object>> savePost(@Body SavedPostRequest request);
@@ -88,6 +102,9 @@ public interface ApiService {
     @PUT("notifications/{id}/read")
     Call<ApiResponse<Void>> markNotificationAsRead(@Path("id") String notificationId);
 
+    @POST("notifications/process-pending")
+    Call<ApiResponse<Object>> processPendingNotifications(@Query("userId") String userId);
+
     // User Profile
     @POST("users")
     Call<ApiResponse<Object>> syncUserProfile(@Body UserProfile profile);
@@ -98,29 +115,14 @@ public interface ApiService {
     @GET("users/{userId}")
     Call<ApiResponse<Object>> getUserProfile(@Path("userId") String userId);
 
-    @POST("users/{userId}/process-pending-notifications")
-    Call<ApiResponse<Object>> processPendingNotifications(@Path("userId") String userId);
-
     // Payments
     @POST("payments")
     Call<ApiResponse<Object>> savePayment(@Body PaymentRequest payment);
     
-    // Dispatch & Delivery
-    @POST("dispatch/mark-dispatched")
-    Call<ApiResponse<Object>> markOrderDispatched(@Body DispatchRequest request);
-    
-    @POST("dispatch/mark-delivered")
-    Call<ApiResponse<Object>> markOrderDelivered(@Body DeliveryRequest request);
-    
-    // FCM Notifications
-    @POST("notifications/send-fcm")
-    Call<ApiResponse<Object>> sendFcmNotification(@Body Object fcmPayload);
-
     // Wrapper Classes
     class RequestBody {
         public String postId;
         public String message;
-        
         public RequestBody(String postId, String message) {
             this.postId = postId;
             this.message = message;
@@ -132,18 +134,37 @@ public interface ApiService {
         public StatusUpdate(String status) { this.status = status; }
     }
 
-    class SavedPostRequest {
-        public String postId;
-        public SavedPostRequest(String postId) { this.postId = postId; }
+    class DispatchBody {
+        public String trackingNumber;
+        public DispatchBody(String trackingNumber) { this.trackingNumber = trackingNumber; }
     }
 
     class AttendRequest {
         public String eventId;
-        public String userId;
-        public AttendRequest(String eventId, String userId) {
-            this.eventId = eventId;
-            this.userId = userId;
+        public AttendRequest(String eventId) { this.eventId = eventId; }
+    }
+
+    class DispatchRequest {
+        public String paymentId;
+        public String buyerId;
+        public String sellerId;
+        public String itemTitle;
+        public String trackingNumber;
+        public String shipperName;
+
+        public DispatchRequest(String paymentId, String buyerId, String sellerId, String itemTitle, String trackingNumber, String shipperName) {
+            this.paymentId = paymentId;
+            this.buyerId = buyerId;
+            this.sellerId = sellerId;
+            this.itemTitle = itemTitle;
+            this.trackingNumber = trackingNumber;
+            this.shipperName = shipperName;
         }
+    }
+
+    class SavedPostRequest {
+        public String postId;
+        public SavedPostRequest(String postId) { this.postId = postId; }
     }
 
     class PaymentRequest {
@@ -161,22 +182,6 @@ public interface ApiService {
             this.ownerId = ownerId;
             this.amount = amount;
             this.status = status;
-        }
-    }
-
-    class DispatchRequest {
-        public String paymentId;
-        public String buyerId;
-        public String sellerId;
-        public String itemTitle;
-        public String trackingNumber;
-
-        public DispatchRequest(String paymentId, String buyerId, String sellerId, String itemTitle, String trackingNumber) {
-            this.paymentId = paymentId;
-            this.buyerId = buyerId;
-            this.sellerId = sellerId;
-            this.itemTitle = itemTitle;
-            this.trackingNumber = trackingNumber;
         }
     }
 

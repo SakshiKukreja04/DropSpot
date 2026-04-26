@@ -32,7 +32,8 @@ public class DispatchTrackingHelper {
             String sellerId,
             String itemTitle,
             String trackingNumber,
-            String paymentId) {
+            String paymentId,
+            String shipperName) {
 
         Log.d(TAG, "[DISPATCH] Calling backend API - Payment: " + paymentId + ", Buyer: " + buyerId);
         
@@ -44,7 +45,8 @@ public class DispatchTrackingHelper {
             buyerId,
             sellerId,
             itemTitle,
-            trackingNumber
+            trackingNumber,
+            shipperName
         );
         
         // Call backend API endpoint
@@ -80,7 +82,7 @@ public class DispatchTrackingHelper {
         Log.d(TAG, "[DISPATCH] Mark order as dispatched - Payment: " + paymentId);
         
         // Call the notification method which will call backend API
-        sendDispatchNotification(buyerId, sellerId, itemTitle, trackingNumber, paymentId);
+        sendDispatchNotification(buyerId, sellerId, itemTitle, trackingNumber, paymentId, null);
     }
 
 
@@ -177,4 +179,3 @@ public class DispatchTrackingHelper {
         void onError(String errorMessage);
     }
 }
-

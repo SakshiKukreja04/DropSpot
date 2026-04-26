@@ -1,8 +1,9 @@
 package com.example.dropspot;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -10,23 +11,27 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.firestore.FirebaseFirestore;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
 
 public class MyRequestsAdapter extends RecyclerView.Adapter<MyRequestsAdapter.RequestViewHolder> {
 
+    private static final String TAG = "MyRequestsAdapter";
     private final List<Request> requests;
     private final Context context;
-    private final FirebaseFirestore firebaseFirestore;
+    private Runnable onRefresh;
 
     public MyRequestsAdapter(Context context, List<Request> requests) {
         this.context = context;
         this.requests = requests;
-        this.firebaseFirestore = FirebaseFirestore.getInstance();
+    }
+
+    public void setOnRefresh(Runnable onRefresh) {
+        this.onRefresh = onRefresh;
     }
 
     @NonNull
@@ -38,8 +43,7 @@ public class MyRequestsAdapter extends RecyclerView.Adapter<MyRequestsAdapter.Re
 
     @Override
     public void onBindViewHolder(@NonNull RequestViewHolder holder, int position) {
-        Request request = requests.get(position);
-        holder.bind(request, firebaseFirestore, context);
+        holder.bind(requests.get(position));
     }
 
     @Override
@@ -60,113 +64,101 @@ public class MyRequestsAdapter extends RecyclerView.Adapter<MyRequestsAdapter.Re
             btnPayment = itemView.findViewById(R.id.btn_proceed_payment);
             tvOrderStatus = itemView.findViewById(R.id.tv_delivery_status);
             btnConfirmDelivery = itemView.findViewById(R.id.btn_confirm_delivery);
+            
+            btnPayment.setOnClickListener(v -> {
+                int pos = getAdapterPosition();
+                if (pos != RecyclerView.NO_POSITION) {
+                    Request request = requests.get(pos);
+                    Log.d(TAG, "Proceeding to payment for request: " + request.getEffectiveId());
+                    Intent intent = new Intent(context, PaymentActivity.class);
+                    intent.putExtra("POST_ID", request.postId);
+                    intent.putExtra("POST_TITLE", request.postTitle);
+                    intent.putExtra("OWNER_ID", request.postOwnerId);
+                    double finalAmount = request.postPrice > 0 ? request.postPrice : 100.0;
+                    intent.putExtra("AMOUNT", finalAmount);
+                    if (!(context instanceof Activity)) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(intent);
+                }
+            });
+
+            btnConfirmDelivery.setOnClickListener(v -> {
+                int pos = getAdapterPosition();
+                if (pos != RecyclerView.NO_POSITION) {
+                    confirmDelivery(requests.get(pos));
+                }
+            });
         }
 
-        public void bind(Request request, FirebaseFirestore firebaseFirestore, Context context) {
+        public void bind(final Request request) {
+            // DEBUG: Log all statuses
+            Log.d("STATUS_CHECK", request.status != null ? request.status : "null");
+            
             title.setText(request.postTitle != null ? request.postTitle : "Unknown Item");
-            
-            String dateStr = request.createdAt;
-            if (dateStr != null && dateStr.contains("T")) {
-                dateStr = dateStr.split("T")[0];
-            }
-            date.setText("Requested on: " + dateStr);
-            
+            date.setText("Requested on: " + (request.createdAt != null ? request.createdAt.split("T")[0] : "N/A"));
             message.setText("Message: " + request.message);
             
-            String s = request.status != null ? request.status : "pending";
-            status.setText(s.toUpperCase());
+            String currentStatus = request.status != null ? request.status.trim().toLowerCase() : "pending";
+            status.setText(currentStatus.toUpperCase());
 
-            String buyerId = FirebaseAuth.getInstance().getUid();
+            // Reset UI
+            btnPayment.setVisibility(View.GONE);
+            tvOrderStatus.setVisibility(View.GONE);
+            btnConfirmDelivery.setVisibility(View.GONE);
+            
+            // Status logic
+            if ("accepted".equals(currentStatus)) {
+                status.getBackground().setTint(ContextCompat.getColor(context, android.R.color.holo_green_dark));
+                btnPayment.setVisibility(View.VISIBLE);
+                Log.d(TAG, "ACCEPTED status found -> Proceed to Payment visible");
+            } else if ("paid".equals(currentStatus)) {
+                status.getBackground().setTint(ContextCompat.getColor(context, android.R.color.holo_green_dark));
+                tvOrderStatus.setVisibility(View.VISIBLE);
+                tvOrderStatus.setText("💰 Paid. Waiting for seller to dispatch order...");
+            } else if ("dispatched".equals(currentStatus)) {
+                status.getBackground().setTint(ContextCompat.getColor(context, android.R.color.holo_blue_dark));
+                tvOrderStatus.setVisibility(View.VISIBLE);
+                // Show tracking number and shipper details
+                String trackingInfo = (request.trackingNumber != null ? request.trackingNumber : "N/A");
+                String shipperInfo = (request.shipperName != null ? request.shipperName : "Delivery Partner");
+                tvOrderStatus.setText("📦 Order Dispatched!\n\nShipper: " + shipperInfo + "\nDelivery Contact: " + trackingInfo);
+                btnConfirmDelivery.setVisibility(View.VISIBLE);
+            } else if ("completed".equals(currentStatus)) {
+                status.getBackground().setTint(ContextCompat.getColor(context, android.R.color.holo_green_dark));
+                tvOrderStatus.setVisibility(View.VISIBLE);
+                tvOrderStatus.setText("✅ Order Completed Successfully!");
+            } else if ("rejected".equals(currentStatus)) {
+                status.getBackground().setTint(ContextCompat.getColor(context, android.R.color.holo_red_dark));
+            } else {
+                status.getBackground().setTint(ContextCompat.getColor(context, android.R.color.holo_orange_dark));
+            }
+        }
 
-            // Check for payment/order
-            firebaseFirestore.collection("orders")
-                    .whereEqualTo("postId", request.postId)
-                    .whereEqualTo("buyerId", buyerId)
-                    .get()
-                    .addOnSuccessListener(queryDocumentSnapshots -> {
-                        if (!queryDocumentSnapshots.isEmpty()) {
-                            var document = queryDocumentSnapshots.getDocuments().get(0);
-                            String orderStatus = (String) document.get("status");
-                            
-                            // Hide payment button, show order status
-                            btnPayment.setVisibility(View.GONE);
-                            tvOrderStatus.setVisibility(View.VISIBLE);
-                            
-                            if ("PAID".equals(orderStatus)) {
-                                tvOrderStatus.setText("💰 Payment Completed ✅\n\nWaiting for seller to dispatch...");
-                                tvOrderStatus.setTextColor(itemView.getContext().getResources().getColor(android.R.color.holo_green_dark));
-                                btnConfirmDelivery.setVisibility(View.GONE);
-                                
-                            } else if ("DISPATCHED".equals(orderStatus)) {
-                                String trackingNumber = (String) document.get("trackingNumber");
-                                tvOrderStatus.setText("📦 Dispatched 🚚\n\nTracking: " + (trackingNumber != null ? trackingNumber : "N/A"));
-                                tvOrderStatus.setTextColor(itemView.getContext().getResources().getColor(android.R.color.holo_blue_dark));
-                                
-                                // Show confirm delivery button
-                                btnConfirmDelivery.setVisibility(View.VISIBLE);
-                                btnConfirmDelivery.setText("Confirm Delivery ✅");
-                                btnConfirmDelivery.setOnClickListener(v -> {
-                                    String sellerId = (String) document.get("sellerId");
-                                    String itemTitle = (String) document.get("itemTitle");
-                                    String paymentId = (String) document.get("paymentId");
-                                    
-                                    // Mark as delivered
-                                    Map<String, Object> updates = new HashMap<>();
-                                    updates.put("status", "DELIVERED");
-                                    updates.put("deliveredAt", System.currentTimeMillis());
-                                    updates.put("updatedAt", System.currentTimeMillis());
-                                    
-                                    firebaseFirestore.collection("orders")
-                                            .document(document.getId())
-                                            .update(updates)
-                                            .addOnSuccessListener(aVoid -> {
-                                                Toast.makeText(context, "Delivery confirmed! ✅", Toast.LENGTH_SHORT).show();
-                                                
-                                                // Send notification to seller
-                                                DispatchTrackingHelper.sendDeliveryConfirmedNotification(
-                                                        sellerId, buyerId, itemTitle, paymentId
-                                                );
-                                                
-                                                // Refresh
-                                                notifyItemChanged(getAdapterPosition());
-                                            })
-                                            .addOnFailureListener(e -> {
-                                                Toast.makeText(context, "Failed to confirm delivery", Toast.LENGTH_SHORT).show();
-                                            });
-                                });
-                                
-                            } else if ("DELIVERED".equals(orderStatus)) {
-                                tvOrderStatus.setText("✅ Delivered 📦\n\nOrder completed successfully!");
-                                tvOrderStatus.setTextColor(itemView.getContext().getResources().getColor(android.R.color.holo_green_dark));
-                                btnConfirmDelivery.setVisibility(View.GONE);
-                            }
-                        } else {
-                            // No payment yet
-                            if ("accepted".equals(s)) {
-                                status.getBackground().setTint(context.getResources().getColor(android.R.color.holo_green_dark));
-                                btnPayment.setVisibility(View.VISIBLE);
-                                btnPayment.setOnClickListener(v -> {
-                                    Intent intent = new Intent(context, PaymentActivity.class);
-                                    intent.putExtra("POST_ID", request.postId);
-                                    intent.putExtra("POST_TITLE", request.postTitle);
-                                    intent.putExtra("OWNER_ID", request.postOwnerId);
-                                    intent.putExtra("AMOUNT", request.postPrice > 0 ? request.postPrice : 100.0);
-                                    context.startActivity(intent);
-                                });
-                            } else if (s.startsWith("rejected")) {
-                                status.getBackground().setTint(context.getResources().getColor(android.R.color.holo_red_dark));
-                                btnPayment.setVisibility(View.GONE);
+        private void confirmDelivery(Request request) {
+            btnConfirmDelivery.setEnabled(false);
+            ApiService apiService = ApiClient.getClient().create(ApiService.class);
+            
+            // Use paymentId from the Request object which is populated after payment
+            String paymentIdToUse = (request.paymentId != null && !request.paymentId.isEmpty()) 
+                    ? request.paymentId : request.getEffectiveId();
+            
+            apiService.markOrderDelivered(new ApiService.DeliveryRequest(
+                    paymentIdToUse, request.requesterId, request.postOwnerId, request.postTitle))
+                    .enqueue(new Callback<ApiResponse<Object>>() {
+                        @Override 
+                        public void onResponse(Call<ApiResponse<Object>> call, Response<ApiResponse<Object>> response) {
+                            if (response.isSuccessful()) {
+                                Toast.makeText(context, "Delivery confirmed! ✅ Order Completed.", Toast.LENGTH_SHORT).show();
+                                request.status = "completed";
+                                notifyItemChanged(getAdapterPosition());
+                                if (onRefresh != null) onRefresh.run();
                             } else {
-                                status.getBackground().setTint(context.getResources().getColor(android.R.color.holo_orange_dark));
-                                btnPayment.setVisibility(View.GONE);
+                                btnConfirmDelivery.setEnabled(true);
+                                Toast.makeText(context, "Confirmation failed. Please try again.", Toast.LENGTH_SHORT).show();
                             }
                         }
-                    })
-                    .addOnFailureListener(e -> {
-                        // Handle error
-                        if ("accepted".equals(s)) {
-                            status.getBackground().setTint(context.getResources().getColor(android.R.color.holo_green_dark));
-                            btnPayment.setVisibility(View.VISIBLE);
+                        @Override public void onFailure(Call<ApiResponse<Object>> call, Throwable t) {
+                            btnConfirmDelivery.setEnabled(true);
+                            Toast.makeText(context, "Error: " + t.getMessage(), Toast.LENGTH_SHORT).show();
                         }
                     });
         }

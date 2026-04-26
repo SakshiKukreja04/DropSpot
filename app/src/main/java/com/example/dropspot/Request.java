@@ -37,8 +37,17 @@ public class Request {
     public String message;
     
     @SerializedName("status")
-    public String status; // "pending", "accepted", "rejected"
+    public String status; // "pending", "accepted", "rejected", "paid", "dispatched", "completed"
     
+    @SerializedName("trackingNumber")
+    public String trackingNumber; // Also used for delivery person phone number
+
+    @SerializedName("shipperName")
+    public String shipperName; // Name of the shipper/delivery partner
+
+    @SerializedName("paymentId")
+    public String paymentId;
+
     @SerializedName("createdAt")
     public String createdAt;
     

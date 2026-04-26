@@ -87,7 +87,7 @@ public class EventsAdapter extends RecyclerView.Adapter<EventsAdapter.EventViewH
         private void attendEvent(Event event, String userId) {
             btnAttend.setEnabled(false);
             
-            apiService.attendEvent(new ApiService.AttendRequest(event.eventId, userId)).enqueue(new Callback<ApiResponse<Object>>() {
+            apiService.attendEvent(new ApiService.AttendRequest(event.eventId)).enqueue(new Callback<ApiResponse<Object>>() {
                 @Override
                 public void onResponse(@NonNull Call<ApiResponse<Object>> call, @NonNull Response<ApiResponse<Object>> response) {
                     if (response.isSuccessful()) {

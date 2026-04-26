@@ -9,11 +9,12 @@ const router = express.Router();
  * POST /dispatch/mark-dispatched
  * Mark order as dispatched and notify buyer
  *
- * Body: { paymentId, buyerId, sellerId, itemTitle, trackingNumber }
+ * Body: { paymentId, buyerId, sellerId, itemTitle, trackingNumber, shipperName }
+ * NOTE: trackingNumber is used to store the phone number of the delivery person.
  */
 router.post('/mark-dispatched', async (req, res, next) => {
   try {
-    const { paymentId, buyerId, sellerId, itemTitle, trackingNumber } = req.body;
+    const { paymentId, buyerId, sellerId, itemTitle, trackingNumber, shipperName } = req.body;
     const userId = req.user.uid;
 
     // Validate request
@@ -23,10 +24,10 @@ router.post('/mark-dispatched', async (req, res, next) => {
 
     // Authorization: Only seller can mark their own orders as dispatched
     if (userId !== sellerId) {
-      return res.status(403).json(errorResponse('Only seller can dispatch this order', 'FORBIDDEN', 403));
+      return res.status(403).json(errorResponse('Unauthorized', 'FORBIDDEN', 403));
     }
 
-    console.log(`[DISPATCH] Marking order as dispatched - Payment: ${paymentId}, Buyer: ${buyerId}, Seller: ${sellerId}`);
+    console.log(`[DISPATCH] Marking order as dispatched - Payment: ${paymentId}, Buyer: ${buyerId}, Seller: ${sellerId}, Shipper: ${shipperName || 'N/A'}`);
 
     const timestamp = getCurrentTimestamp();
 
@@ -37,48 +38,87 @@ router.post('/mark-dispatched', async (req, res, next) => {
       return res.status(404).json(errorResponse('Payment not found', 'NOT_FOUND', 404));
     }
 
-    await db.collection('payments').doc(paymentId).update({
+    const batch = db.batch();
+
+    // Update payment document
+    batch.update(db.collection('payments').doc(paymentId), {
       status: 'dispatched',
       trackingNumber: trackingNumber,
+      shipperName: shipperName || 'N/A',
       dispatchedAt: timestamp,
       updatedAt: timestamp
     });
 
-    // 2. Create notification record in database (BUYER gets this notification)
+    // 2. Sync status to Requests collection so buyer sees it in "My Requests"
+    let requestDoc = null;
+
+    const requestsSnapshot = await db.collection('requests')
+      .where('paymentId', '==', paymentId)
+      .limit(1)
+      .get();
+
+    if (!requestsSnapshot.empty) {
+      requestDoc = requestsSnapshot.docs[0];
+    } else {
+      console.log("⚠️ No request found via paymentId, trying fallback...");
+
+      const fallbackSnapshot = await db.collection('requests')
+        .where('requesterId', '==', buyerId)
+        .where('postOwnerId', '==', sellerId)
+        .limit(1)
+        .get();
+
+      if (!fallbackSnapshot.empty) {
+        requestDoc = fallbackSnapshot.docs[0];
+      }
+    }
+
+    if (requestDoc) {
+      batch.update(requestDoc.ref, {
+        status: 'dispatched',
+        trackingNumber: trackingNumber,
+        shipperName: shipperName || 'N/A',
+        updatedAt: timestamp
+      });
+    }
+
+    await batch.commit();
+
+    // 3. Create notification record for buyer
     const notificationId = generateId();
     await db.collection('notifications').doc(notificationId).set({
       notificationId,
-      userId: buyerId, // CRITICAL: Notification goes to BUYER, not seller
-      type: 'ORDER_DISPATCHED', // Match frontend enum
-      title: 'Order Shipped 🚚',
-      message: `Your item "${itemTitle}" has been dispatched by the seller`,
+      userId: buyerId,
+      message: `Your item "${itemTitle}" has been dispatched.\n\nShipper: ${shipperName || 'N/A'}\nTracking: ${trackingNumber}`,
+      type: 'ORDER_DISPATCHED',
+      shipperName: shipperName || 'N/A',
+      title: 'Order Dispatched 🚚',
       trackingNumber: trackingNumber,
       itemTitle: itemTitle,
       relatedId: paymentId,
       relatedType: 'payment',
       read: false,
       createdAt: timestamp,
-      timestamp: new Date() // Add timestamp field for sorting
+      timestamp: new Date()
     });
-    console.log(`[DISPATCH] Notification saved - userId: ${buyerId}, notificationId: ${notificationId}`);
 
-    // 3. Fetch buyer's FCM token and send real-time push notification
+    // 4. Send FCM Push Notification
     try {
       const buyerDoc = await db.collection('users').doc(buyerId).get();
       if (buyerDoc.exists) {
         const buyerData = buyerDoc.data();
         if (buyerData.fcmToken) {
-          console.log(`[DISPATCH] Sending dispatch notification to buyer: ${buyerId}`);
           await sendPushNotification(
             buyerData.fcmToken,
-            'Order Shipped 🚚',
-            `Your item "${itemTitle}" has been dispatched\nTracking: ${trackingNumber}`,
+            'Order Dispatched 🚚',
+            `Your item "${itemTitle}" has been dispatched by ${shipperName || 'delivery partner'}.\nTracking: ${trackingNumber}`,
             {
+              shipperName: shipperName || 'N/A',
               type: 'order_dispatched',
               paymentId,
               trackingNumber,
               itemTitle,
-              recipientUserId: buyerId // CRITICAL: Frontend validates this matches current user
+              recipientUserId: buyerId
             }
           );
         }
@@ -87,7 +127,6 @@ router.post('/mark-dispatched', async (req, res, next) => {
       console.error('[FCM] Error sending dispatch notification:', pushError);
     }
 
-    console.log(`[DISPATCH] SUCCESS: Order ${paymentId} marked as dispatched`);
     res.status(200).json(successResponse({ status: 'dispatched', trackingNumber }, 'Order dispatched successfully'));
   } catch (error) {
     console.error('[DISPATCH] ERROR:', error);
@@ -127,36 +166,80 @@ router.post('/mark-delivered', async (req, res, next) => {
       return res.status(404).json(errorResponse('Payment not found', 'NOT_FOUND', 404));
     }
 
-    await db.collection('payments').doc(paymentId).update({
+    const batch = db.batch();
+
+    batch.update(db.collection('payments').doc(paymentId), {
       status: 'delivered',
       deliveredAt: timestamp,
       updatedAt: timestamp
     });
 
-    // 2. Create notification record in database (SELLER gets this notification)
+    // 2. Sync status to Requests collection
+    let requestDoc = null;
+
+    const requestsSnapshot = await db.collection('requests')
+      .where('paymentId', '==', paymentId)
+      .limit(1)
+      .get();
+
+    if (!requestsSnapshot.empty) {
+      requestDoc = requestsSnapshot.docs[0];
+    } else {
+      console.log("⚠️ No request found via paymentId, trying fallback...");
+
+      const fallbackSnapshot = await db.collection('requests')
+        .where('requesterId', '==', buyerId)
+        .where('postOwnerId', '==', sellerId)
+        .limit(1)
+        .get();
+
+      if (!fallbackSnapshot.empty) {
+        requestDoc = fallbackSnapshot.docs[0];
+      }
+    }
+
+    if (requestDoc) {
+      batch.update(requestDoc.ref, {
+        status: 'completed',
+        updatedAt: timestamp
+      });
+    }
+
+    await batch.commit();
+
+    // 3. Close the post after successful delivery
+    const paymentDocAfterDelivery = await db.collection('payments').doc(paymentId).get();
+    if (paymentDocAfterDelivery.exists) {
+      const paymentData = paymentDocAfterDelivery.data();
+      await db.collection('posts').doc(paymentData.postId).update({
+        status: 'sold',
+        isActive: false,
+        updatedAt: timestamp
+      });
+    }
+
+    // 4. Create notification record for seller
     const notificationId = generateId();
     await db.collection('notifications').doc(notificationId).set({
       notificationId,
-      userId: sellerId, // CRITICAL: Notification goes to SELLER, not buyer
-      type: 'DELIVERY_CONFIRMED', // Match frontend enum
+      userId: sellerId,
+      type: 'DELIVERY_CONFIRMED',
       title: 'Delivery Confirmed 📦',
-      message: `Buyer confirmed delivery of "${itemTitle}"`,
+      message: `Buyer confirmed delivery of "${itemTitle}". Order is complete.`,
       itemTitle: itemTitle,
       relatedId: paymentId,
       relatedType: 'payment',
       read: false,
       createdAt: timestamp,
-      timestamp: new Date() // Add timestamp field for sorting
+      timestamp: new Date()
     });
-    console.log(`[DELIVERY] Notification saved - userId: ${sellerId}, notificationId: ${notificationId}`);
 
-    // 3. Fetch seller's FCM token and send real-time push notification
+    // 5. Send FCM Push Notification
     try {
       const sellerDoc = await db.collection('users').doc(sellerId).get();
       if (sellerDoc.exists) {
         const sellerData = sellerDoc.data();
         if (sellerData.fcmToken) {
-          console.log(`[DELIVERY] Sending delivery notification to seller: ${sellerId}`);
           await sendPushNotification(
             sellerData.fcmToken,
             'Delivery Confirmed 📦',
@@ -165,7 +248,7 @@ router.post('/mark-delivered', async (req, res, next) => {
               type: 'order_delivered',
               paymentId,
               itemTitle,
-              recipientUserId: sellerId // CRITICAL: Frontend validates this matches current user
+              recipientUserId: sellerId
             }
           );
         }
@@ -174,7 +257,6 @@ router.post('/mark-delivered', async (req, res, next) => {
       console.error('[FCM] Error sending delivery notification:', pushError);
     }
 
-    console.log(`[DELIVERY] SUCCESS: Order ${paymentId} marked as delivered`);
     res.status(200).json(successResponse({ status: 'delivered' }, 'Order marked as delivered successfully'));
   } catch (error) {
     console.error('[DELIVERY] ERROR:', error);
@@ -183,6 +265,3 @@ router.post('/mark-delivered', async (req, res, next) => {
 });
 
 export default router;
-
-
-

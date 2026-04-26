@@ -84,7 +84,12 @@ public class PostedItemsFragment extends Fragment {
 
                 if (response.isSuccessful() && response.body() != null && response.body().getData() != null) {
                     myPosts.clear();
-                    myPosts.addAll(response.body().getData().getPosts());
+                    List<Post> posts = response.body().getData().getPosts();
+                    Log.d(TAG, "Loaded " + posts.size() + " posts");
+                    for (Post p : posts) {
+                        Log.d(TAG, "Post: " + p.title + ", ID: " + p.id + ", Active: " + p.isActive);
+                    }
+                    myPosts.addAll(posts);
                     rvPostedItems.getAdapter().notifyDataSetChanged();
                     
                     if (myPosts.isEmpty()) {
@@ -94,6 +99,7 @@ public class PostedItemsFragment extends Fragment {
                     }
                 } else {
                     Toast.makeText(getContext(), "Failed to load your posts", Toast.LENGTH_SHORT).show();
+                    Log.e(TAG, "Failed to load posts: response = " + response);
                 }
             }
 

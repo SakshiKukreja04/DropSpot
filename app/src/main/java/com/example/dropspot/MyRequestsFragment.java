@@ -61,6 +61,7 @@ public class MyRequestsFragment extends Fragment {
     private void setupRecyclerView() {
         rvMyRequests.setLayoutManager(new LinearLayoutManager(getContext()));
         requestsAdapter = new MyRequestsAdapter(getContext(), requestList);
+        requestsAdapter.setOnRefresh(this::fetchMyRequests);
         rvMyRequests.setAdapter(requestsAdapter);
     }
 
@@ -100,4 +101,3 @@ public class MyRequestsFragment extends Fragment {
         });
     }
 }
-

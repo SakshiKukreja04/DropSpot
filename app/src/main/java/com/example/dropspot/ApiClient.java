@@ -20,8 +20,8 @@ public class ApiClient {
     // ⚠️ CRITICAL: Device and Computer MUST be on SAME WiFi network!
     // Computer IP: 192.168.29.133 (WiFi: VESITSTUDENT)
     // Backend running on port 5000
-    private static final String BASE_URL = "http://192.168.29.133:5000/api/";
-//    private static final String BASE_URL = "https://dropspot-xt4s.onrender.com/api/";
+//    private static final String BASE_URL = "http://192.168.29.133:5000/api/";
+    private static final String BASE_URL = "https://dropspot-xt4s.onrender.com/api/";
 
     private static Retrofit retrofit = null;
 
